@@ -66,7 +66,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
     private var run = 0
     private var loadError: String?
     // the picker being edited
-    private var editing: StationSign?
+    private var editingSign: StationSign?
     private var hits: [Int] = []
     private var hi = 0
     private var scrolledForTest = false
@@ -220,8 +220,8 @@ final class Screen: UIViewController, UITextFieldDelegate {
     private func showStations() {
         for s in [board.fromSign, board.toSign] {
             let st = value(s).flatMap { tt?.stations[$0] }
-            if editing !== s { s.field.text = st?.name ?? "" }
-            s.pinyin.set([Run(text: st != nil && editing !== s ? pinyinLabel(st!.pinyin) : " ", face: .num, size: 17, weight: 500, color: .muted)])
+            if editingSign !== s { s.field.text = st?.name ?? "" }
+            s.pinyin.set([Run(text: st != nil && editingSign !== s ? pinyinLabel(st!.pinyin) : " ", face: .num, size: 17, weight: 500, color: .muted)])
             s.field.accessibilityValue = st?.name
         }
     }
@@ -236,7 +236,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
     }
 
     private func updateHits() {
-        guard let tt, let s = editing else { return }
+        guard let tt, let s = editingSign else { return }
         let text = s.field.text ?? "", q = text.trimmingCharacters(in: .whitespaces)
         hits = !q.isEmpty && q != shown(s) ? searchStations(tt, q) : Array(recentIdx.filter { $0 != value(s) }.prefix(8))
         suggest.set(tt, hits: hits, head: q.isEmpty || text == shown(s), hi: hi)
@@ -246,7 +246,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
 
     func textFieldDidBeginEditing(_ f: UITextField) {
         let s = sign(of: f)
-        editing = s
+        editingSign = s
         s.focused(true)
         hi = 0
         f.selectAll(nil)
@@ -268,14 +268,14 @@ final class Screen: UIViewController, UITextFieldDelegate {
     func textFieldDidEndEditing(_ f: UITextField) {
         let s = sign(of: f)
         s.focused(false)
-        if editing === s { editing = nil }
+        if editingSign === s { editingSign = nil }
         suggest.removeFromSuperview()
         showStations()
         layoutPage()
     }
 
     private func pick(_ i: Int) {
-        guard let tt, let s = editing else { return }
+        guard let tt, let s = editingSign else { return }
         if s === board.fromSign { from = i } else { to = i }
         recent = [tt.stations[i].name] + recent.filter { $0 != tt.stations[i].name }
         recent = Array(recent.prefix(8))
@@ -286,10 +286,10 @@ final class Screen: UIViewController, UITextFieldDelegate {
     }
 
     @objc private func tapOutside(_ g: UITapGestureRecognizer) {
-        guard editing != nil else { return }
+        guard editingSign != nil else { return }
         let p = g.location(in: scroll)
         if suggest.superview != nil && suggest.frame.contains(p) { return }
-        if let s = editing, s.convert(s.bounds, to: scroll).contains(p) { return }
+        if let s = editingSign, s.convert(s.bounds, to: scroll).contains(p) { return }
         view.endEditing(true)
     }
 
@@ -499,7 +499,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
         }
         let bh = board.layout(w)
         board.frame = CGRect(x: x, y: y, width: w, height: bh)
-        if let s = editing, suggest.superview != nil {
+        if let s = editingSign, suggest.superview != nil {
             let sh = suggest.layout(w)
             suggest.frame = CGRect(x: x, y: y + s.frame.maxY, width: w, height: sh)
             scroll.bringSubviewToFront(suggest)
