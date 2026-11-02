@@ -13,7 +13,12 @@ final class ReferenceController: UIViewController {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(handler, forURLScheme: "train")
         config.websiteDataStore = .nonPersistent()
-        var script = ""
+        // iOS enlarges a page's text in landscape unless the page opts out; the site doesn't, so the reference does:
+        // it shows the CSS's own sizes, which the native screen draws
+        var script = """
+        document.addEventListener('DOMContentLoaded', () => { const s = document.createElement('style');
+          s.textContent = 'html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }'; document.head.appendChild(s); });
+        """
         if Flags.fixture {
             // the fixture's clock, as Flags.now() gives the native screen
             script += """
@@ -32,9 +37,7 @@ final class ReferenceController: UIViewController {
             script += GeometryProbe.script
             config.userContentController.add(geometry, name: "geometry")
         }
-        if !script.isEmpty {
-            config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        }
+        config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let web = WKWebView(frame: .zero, configuration: config)
         web.backgroundColor = .ground
         web.underPageBackgroundColor = .ground

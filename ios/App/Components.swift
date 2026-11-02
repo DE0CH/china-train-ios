@@ -103,7 +103,7 @@ final class StationSign: UIView {
         let top: CGFloat = 12, x: CGFloat = 52, tw = max(0, w - x - 16)
         label.frame = CGRect(x: x, y: top, width: tw, height: 21)
         // input: padding 2px 0, border-bottom 3px; WebKit gives its text at least the font's own height (ascent +
-        // descent, rounded: 45px), not the 36px of line-height 1.15
+        // descent, rounded up: 45px), not the 36px of line-height 1.15
         let (a, d) = Fonts.metrics(Fonts.font(.text, 32, 800)), fh = max(36, a + d)
         field.frame = CGRect(x: x, y: top + 21 + 2, width: tw, height: fh)
         underline.frame = CGRect(x: x, y: top + 21 + 2 + fh + 2, width: tw, height: 3)

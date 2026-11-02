@@ -67,9 +67,10 @@ enum Fonts {
         return font
     }
 
-    /// Ascent and descent as WebKit uses them for line boxes: whole points.
+    /// Ascent and descent as WebKit uses them for line boxes: each rounded up to a whole point (checked against the
+    /// page's own text boxes with `-geometry`: 16px PingFang 17 + 6, 24px Archivo 22 + 6).
     static func metrics(_ f: CTFont) -> (ascent: CGFloat, descent: CGFloat) {
-        (CTFontGetAscent(f).rounded(), CTFontGetDescent(f).rounded())
+        (CTFontGetAscent(f).rounded(.up), CTFontGetDescent(f).rounded(.up))
     }
 }
 
@@ -88,7 +89,7 @@ struct Run {
 }
 
 /// One line of inline runs laid out the way WebKit lays out an inline formatting context: each run's box is its line
-/// height with the font's ascent+descent (each rounded) in it after half the leading (floored), boxes share a
+/// height with the font's ascent+descent (each rounded up) in it after half the leading (floored), boxes share a
 /// baseline, and the line is the max above plus the max below.
 struct InlineLine {
     let runs: [Run]
