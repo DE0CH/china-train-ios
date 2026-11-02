@@ -251,7 +251,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
         editingSign = s
         s.focused(true)
         hi = 0
-        f.selectAll(nil)
+        DispatchQueue.main.async { f.selectAll(nil) }   // the page's select() on focus: typing replaces the name
         showStations()
         updateHits()
         scroll.scrollRectToVisible(CGRect(x: 0, y: board.frame.minY + s.frame.minY, width: 1, height: s.frame.height + 200), animated: true)

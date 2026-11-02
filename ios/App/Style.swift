@@ -83,12 +83,13 @@ struct Run {
     var lineHeight: CGFloat? = nil   // nil: 1.5 × size, the body's
     var marginRight: CGFloat = 0
     var font: CTFont { Fonts.font(face, size, weight) }
-    var lh: CGFloat { lineHeight ?? size * 1.5 }
+    /// WebKit truncates a computed line height to whole points (33.6px → 33).
+    var lh: CGFloat { (lineHeight ?? size * 1.5).rounded(.down) }
 }
 
-/// One line of inline runs laid out the way CSS lays out an inline formatting context: each run's box is its line
-/// height with the font's ascent+descent centred in it (half-leading), boxes share a baseline, and the line is the max
-/// above plus the max below.
+/// One line of inline runs laid out the way WebKit lays out an inline formatting context: each run's box is its line
+/// height with the font's ascent+descent (each rounded) in it after half the leading (floored), boxes share a
+/// baseline, and the line is the max above plus the max below.
 struct InlineLine {
     let runs: [Run]
     let widths: [CGFloat]
@@ -104,7 +105,7 @@ struct InlineLine {
             w.append(width)
             total += width + r.marginRight
             let (a, d) = Fonts.metrics(r.font)
-            let half = (r.lh - (a + d)) / 2
+            let half = ((r.lh - (a + d)) / 2).rounded(.down)
             above = max(above, half + a)
             below = max(below, r.lh - half - a)
         }

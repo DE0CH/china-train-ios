@@ -103,8 +103,8 @@ final class StationSign: UIView {
         let top: CGFloat = 12, x: CGFloat = 52, tw = max(0, w - x - 16)
         label.frame = CGRect(x: x, y: top, width: tw, height: 21)
         // input: padding 2px 0, border-bottom 3px; WebKit gives its text at least the font's own height (ascent +
-        // descent, unrounded), not the 36.8px of line-height 1.15
-        let f = Fonts.font(.text, 32, 800), fh = max(36.8, CTFontGetAscent(f) + CTFontGetDescent(f))
+        // descent, rounded: 45px), not the 36px of line-height 1.15
+        let (a, d) = Fonts.metrics(Fonts.font(.text, 32, 800)), fh = max(36, a + d)
         field.frame = CGRect(x: x, y: top + 21 + 2, width: tw, height: fh)
         underline.frame = CGRect(x: x, y: top + 21 + 2 + fh + 2, width: tw, height: 3)
         pinyin.frame = CGRect(x: x, y: top + 21 + fh + 7, width: tw, height: pinyin.height)
@@ -227,9 +227,10 @@ final class DayStrip: UIScrollView {
         let cw = max(64, w / CGFloat(max(cells.count, 1)))
         for (k, (cell, a, b, rule, _)) in cells.enumerated() {
             cell.frame = CGRect(x: CGFloat(k) * cw, y: 0, width: cw, height: 60)
-            let top = (60 - (a.height + b.height)) / 2
-            a.frame = CGRect(x: (cw - a.naturalWidth) / 2, y: top, width: a.naturalWidth, height: a.height)
-            b.frame = CGRect(x: (cw - b.naturalWidth) / 2, y: top + a.height, width: b.naturalWidth, height: b.height)
+            let top = (60 - (a.height + b.height)) / 2, last = k == cells.count - 1
+            let inner = cw - (last ? 0 : 1)   // centred in the box inside its right rule
+            a.frame = CGRect(x: (inner - a.naturalWidth) / 2, y: top, width: a.naturalWidth, height: a.height)
+            b.frame = CGRect(x: (inner - b.naturalWidth) / 2, y: top + a.height, width: b.naturalWidth, height: b.height)
             rule.frame = CGRect(x: cw - 1, y: 0, width: 1, height: 60)
             rule.isHidden = k == cells.count - 1
         }
@@ -424,7 +425,7 @@ final class Board: UIView {
         for (k, p) in presets.enumerated() {
             p.frame = CGRect(x: CGFloat(k) * pw, y: y, width: pw, height: 48)
             if let t = p.subviews.first as? TextView {
-                t.frame = CGRect(x: (pw - t.naturalWidth) / 2, y: (48 - t.height) / 2, width: t.naturalWidth, height: t.height)
+                t.frame = CGRect(x: (pw - 1 - t.naturalWidth) / 2, y: (48 - t.height) / 2, width: t.naturalWidth, height: t.height)
             }
             toolRules[k].frame = CGRect(x: pw - 1, y: 0, width: 1, height: 48)
         }
@@ -680,7 +681,7 @@ final class RouteRow: UIView {
             let t = TextView("暂不售票", size: 14, lineHeight: 22.4)
             p.addSubview(t)
             t.frame = CGRect(x: 1, y: 1, width: t.naturalWidth, height: t.height)
-            p.frame.size = CGSize(width: t.naturalWidth + 2, height: 27.6)
+            p.frame.size = CGSize(width: t.naturalWidth + 2, height: 25 + 2)
             out.append(p)
         }
         for (k, v) in [("商务", seats.sw), ("一等", seats.yd), ("二等", seats.ed), ("无座", seats.wz)] where v != "--" {
@@ -694,9 +695,9 @@ final class RouteRow: UIView {
             p.addSubview(count)
             let lw = 6 + label.naturalWidth + 6, cw = max(28, 7 + count.naturalWidth + 7)
             label.frame = CGRect(x: 1 + 6, y: 1, width: label.naturalWidth, height: label.height)
-            cell.frame = CGRect(x: 1 + lw, y: 1, width: cw, height: 25.6)
+            cell.frame = CGRect(x: 1 + lw, y: 1, width: cw, height: count.height)
             count.frame = CGRect(x: 1 + lw + (cw - count.naturalWidth) / 2, y: 1, width: count.naturalWidth, height: count.height)
-            p.frame.size = CGSize(width: lw + cw + 2, height: 27.6)
+            p.frame.size = CGSize(width: lw + cw + 2, height: count.height + 2)   // the items stretch to the count's 25px
             p.isAccessibilityElement = true
             p.accessibilityLabel = "\(k) \(v)"
             out.append(p)
