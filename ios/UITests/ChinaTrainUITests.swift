@@ -176,7 +176,7 @@ final class ChinaTrainUITests: XCTestCase {
     }
 
     /// The share of pixels allowed to differ between the native screen and the page.
-    static let maxDiffer = 0.02
+    static let maxDiffer = 0.005   // 0.06–0.38% on 2026-11-02 (build 5)
 }
 
 /// A screenshot as 8-bit grey pixels.
