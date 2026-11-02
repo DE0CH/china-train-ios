@@ -105,6 +105,21 @@ final class ChinaTrainUITests: XCTestCase {
         app.terminate()
     }
 
+    /// Where things are, both ways: prints WebKit's boxes and line rects and the native line boxes (GEOM lines), the
+    /// numbers behind the pixel comparison.
+    func testGeometry() throws {
+        for mode in ["native", "html"] {
+            XCUIDevice.shared.orientation = .portrait
+            let app = launch(["-fixture", "-reset", "-geometry"] + (mode == "html" ? ["-reference"] : []))
+            XCTAssertEqual(settled(app), "余票已核对")
+            let probe = app.descendants(matching: .any)["geometry"].firstMatch
+            let end = Date().addingTimeInterval(10)
+            while Date() < end && (probe.label.isEmpty || !probe.exists) { Thread.sleep(forTimeInterval: 0.5) }
+            print("GEOM \(mode) \(probe.exists ? probe.label : "none")")
+            app.terminate()
+        }
+    }
+
     /// The native screen against china-train's page (`-reference`), state by state on the fixture. Prints the share of
     /// differing pixels and attaches native/html/diff images.
     func testMatchesReference() throws {

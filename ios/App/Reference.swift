@@ -7,6 +7,7 @@ import WebKit
 /// query (or the fixture), so the reference needs no server either. The replica compares the two screen by screen.
 final class ReferenceController: UIViewController {
     private let handler = SiteScheme()
+    private let geometry = GeometryHandler()
 
     override func loadView() {
         let config = WKWebViewConfiguration()
@@ -27,6 +28,10 @@ final class ReferenceController: UIViewController {
               clearInterval(t); window.scrollTo(0, \(Int(y))); } }, 100); })();
             """
         }
+        if Flags.geometry {
+            script += GeometryProbe.script
+            config.userContentController.add(geometry, name: "geometry")
+        }
         if !script.isEmpty {
             config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
@@ -36,6 +41,7 @@ final class ReferenceController: UIViewController {
         web.scrollView.showsVerticalScrollIndicator = false
         web.load(URLRequest(url: URL(string: "train://app/index.html")!))
         view = web
+        geometry.view = web
     }
 }
 

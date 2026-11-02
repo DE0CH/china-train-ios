@@ -126,6 +126,7 @@ final class TextView: UIView {
         super.init(frame: .zero)
         isOpaque = false
         contentMode = .topLeft   // a rotation moves the text; it never stretches it
+        isUserInteractionEnabled = false   // a tap on a button's words is a tap on the button
         isAccessibilityElement = true
         accessibilityTraits = .staticText
         set(runs)

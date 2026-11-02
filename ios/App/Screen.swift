@@ -1,3 +1,4 @@
+import CoreText
 import UIKit
 
 /// Launch flags. `-reference`: the site's own page (Reference.swift) instead of the native screen. `-fixture`: made-up
@@ -8,6 +9,7 @@ enum Flags {
     static let reference = args.contains("-reference")
     static let fixture = args.contains("-fixture")
     static let reset = args.contains("-reset")
+    static let geometry = args.contains("-geometry")
     static let scroll: CGFloat? = args.firstIndex(of: "-scroll").flatMap { args.count > $0 + 1 ? Double(args[$0 + 1]).map { CGFloat($0) } : nil }
     /// The fixture's clock: 2 November 2026, 09:41 on the phone's own time zone.
     static let fixedNow: Date = {
@@ -383,6 +385,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
         }
         resultViews.forEach { scroll.insertSubview($0, belowSubview: board) }
         layoutPage()
+        if Flags.geometry, checkedAt != nil { dumpGeometry() }
         if let y = Flags.scroll, checkedAt != nil, !scrolledForTest {
             scrolledForTest = true
             scroll.layoutIfNeeded()
@@ -471,6 +474,28 @@ final class Screen: UIViewController, UITextFieldDelegate {
         func avail(_ x: Seats?) -> Bool { guard let x, x.canBuy else { return false }; return [x.sw, x.yd, x.ed, x.wz].contains { $0 == "有" || Int($0) != nil } }
         let status = info.contains { $0.1 == nil } ? "pending" : info.contains { $0.1?.error != nil } ? "error" : info.allSatisfy { avail($0.1?.seats) } ? "ok" : "none"
         return RouteRow(depart: r.depart, arrive: r.arrive, status: status, items: items)
+    }
+
+    /// `-geometry`: every drawn text's line box and baseline in page coordinates, and the fonts' metrics, as JSON in an
+    /// accessibility element the replica reads (the reference reports WebKit's boxes the same way).
+    private func dumpGeometry() {
+        view.layoutIfNeeded()
+        var items: [[Any]] = []
+        func walk(_ v: UIView) {
+            if let t = v as? TextView, !t.isHidden {
+                let r = t.convert(t.bounds, to: scroll)
+                items.append([t.accessibilityLabel ?? "", r.minX, r.minY, t.naturalWidth, t.height, t.firstBaseline])
+            }
+            v.subviews.forEach(walk)
+        }
+        walk(scroll)
+        var fonts: [String: [CGFloat]] = [:]
+        for (face, size, weight) in [(Face.text, 14.0, 400), (.text, 16, 700), (.text, 28, 800), (.text, 32, 800), (.num, 18, 600), (.num, 24, 700), (.num, 17, 500)] {
+            let f = Fonts.font(face, CGFloat(size), weight)
+            fonts["\(face)-\(Int(size))-\(weight)"] = [CTFontGetAscent(f), CTFontGetDescent(f), CTFontGetLeading(f), CTFontGetCapHeight(f)]
+        }
+        let json = (try? JSONSerialization.data(withJSONObject: ["items": items, "fonts": fonts])).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        GeometryProbe.show(json, in: view)
     }
 
     // ---- layout ----

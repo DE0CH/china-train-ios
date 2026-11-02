@@ -1,3 +1,4 @@
+import CoreText
 import UIKit
 
 // The page's parts, each laid out by hand to china-train's src/index.css at phone width (the `max-width: 900px`
@@ -101,11 +102,13 @@ final class StationSign: UIView {
     func layout(_ w: CGFloat) -> CGFloat {
         let top: CGFloat = 12, x: CGFloat = 52, tw = max(0, w - x - 16)
         label.frame = CGRect(x: x, y: top, width: tw, height: 21)
-        // input: padding 2px 0, line-height 1.15 (36.8px), border-bottom 3px
-        field.frame = CGRect(x: x, y: top + 21 + 2, width: tw, height: 36.8)
-        underline.frame = CGRect(x: x, y: top + 21 + 2 + 36.8 + 2, width: tw, height: 3)
-        pinyin.frame = CGRect(x: x, y: top + 21 + 43.8, width: tw, height: pinyin.height)
-        let inner = 21 + 43.8 + pinyin.height, h = inner + 24
+        // input: padding 2px 0, border-bottom 3px; WebKit gives its text at least the font's own height (ascent +
+        // descent, unrounded), not the 36.8px of line-height 1.15
+        let f = Fonts.font(.text, 32, 800), fh = max(36.8, CTFontGetAscent(f) + CTFontGetDescent(f))
+        field.frame = CGRect(x: x, y: top + 21 + 2, width: tw, height: fh)
+        underline.frame = CGRect(x: x, y: top + 21 + 2 + fh + 2, width: tw, height: 3)
+        pinyin.frame = CGRect(x: x, y: top + 21 + fh + 7, width: tw, height: pinyin.height)
+        let inner = 21 + fh + 7 + pinyin.height, h = inner + 24
         let cy = top + inner / 2
         node.frame = CGRect(x: 13, y: cy - 9, width: 18, height: 18)
         // the line runs from the node to the next part: left calc(50% - 3px), 6px, 12px past the track
