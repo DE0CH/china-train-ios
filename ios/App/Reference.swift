@@ -108,7 +108,7 @@ final class SiteScheme: NSObject, WKURLSchemeHandler {
             } else {
                 let (date, station) = (q["date"] ?? "", q["station"] ?? "")
                 var gate: String
-                if Flags.fixture { try await Task.sleep(nanoseconds: 50_000_000); gate = fixtureGate(code: code, station: station) }
+                if Flags.fixture { gate = fixtureGate(code: code, station: station) }   // at once, as the native screen's
                 else { gate = try await TwelveOhSix.shared.gate(code: code, date: date, station: station, start: start) }
                 body = ["gate": gate]
             }

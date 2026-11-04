@@ -23,10 +23,6 @@ class Tap: UIControl {
     @objc private func fire() { onTap() }
 }
 
-/// A station's Latin name, as the page writes it: its pinyin as China Railway's signs write it (Shenzhenbei); 12306's
-/// pinyin field for 香港西九龙 is an abbreviation (hkwestkowloon), so it gets its English name.
-private let latinNames = ["香港西九龙": "Hong Kong West Kowloon"]
-func pinyinLabel(_ s: Station) -> String { latinNames[s.name] ?? s.pinyin.prefix(1).uppercased() + String(s.pinyin.dropFirst()) }
 
 // ---- header: `.top` ---------------------------------------------------------------------------------------------
 
@@ -71,7 +67,6 @@ final class StationSign: UIView {
     let label: TextView
     let field = UITextField()
     let underline = Box(.clear)
-    let pinyin = TextView(" ", .num, size: 17, weight: 500, color: .muted)   // .pinyin 1.0625rem/500
     let line = Box(.ink)
     let node = Border(.ink, UIEdgeInsets(top: 4, left: 4, bottom: 4, right: 4), fill: .panel)   // .node 18px, 4px ink
     let isStart: Bool
@@ -80,7 +75,7 @@ final class StationSign: UIView {
         isStart = start
         label = TextView(text, size: 14, color: .muted)
         super.init(frame: .zero)
-        for v in [line, node, label, field, underline, pinyin] as [UIView] { addSubview(v) }
+        for v in [line, node, label, field, underline] as [UIView] { addSubview(v) }
         field.font = Fonts.font(.text, 32, 800) as UIFont   // .sign input 2rem/800 at phone width
         field.textColor = .ink
         field.tintColor = .focus
@@ -110,8 +105,7 @@ final class StationSign: UIView {
         let (a, d) = Fonts.metrics(Fonts.font(.text, 32, 800)), fh = max(36, a + d)
         field.frame = CGRect(x: x, y: top + 21 + 2, width: tw, height: fh)
         underline.frame = CGRect(x: x, y: top + 21 + 2 + fh + 2, width: tw, height: 3)
-        pinyin.frame = CGRect(x: x, y: top + 21 + fh + 7, width: tw, height: pinyin.height)
-        let inner = 21 + fh + 7 + pinyin.height, h = inner + 24
+        let inner = 21 + fh + 7, h = inner + 24   // the label and the input (no pinyin line)
         let cy = top + inner / 2
         node.frame = CGRect(x: 13, y: cy - 9, width: 18, height: 18)
         // the line runs from the node to the next part: left calc(50% - 3px), 6px, 12px past the track
@@ -150,7 +144,7 @@ final class SuggestList: UIView {
             let row = Tap()
             row.backgroundColor = on ? .ink : .clear
             let name = TextView(s.name, size: 17, weight: 700, color: on ? .panel : .ink)   // .s-name 1.0625rem/700
-            let meta = TextView((s.city != s.name ? "\(s.city)　" : "") + pinyinLabel(s), .num, size: 15, color: on ? .panel : .muted)
+            let meta = TextView(s.city != s.name ? s.city : "", .num, size: 15, color: on ? .panel : .muted)
             row.addSubview(name)
             row.addSubview(meta)
             row.accessibilityIdentifier = "suggest-\(s.name)"
