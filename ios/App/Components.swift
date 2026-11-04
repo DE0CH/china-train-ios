@@ -576,7 +576,7 @@ struct LegState {
 final class RouteRow: UIView {
     struct Item {
         enum Kind { case stop(name: String, times: [(String, String)], note: String?, gate: (raw: String, label: String?)?, inLine: String?, outLine: String?, xchg: Bool),
-                         leg(code: String, cls: String, minutes: Int, terminus: String?, state: LegState?), xfer(text: String, walk: Bool) }
+                         leg(code: String, cls: String, minutes: Int, terminus: String?, state: LegState?), xfer(text: String) }
         let kind: Kind
     }
 
@@ -642,7 +642,7 @@ final class RouteRow: UIView {
                                                   : [strut, Run(text: t, face: .num, size: 18, weight: 600, marginRight: 3), Run(text: k, size: 14, color: .muted)]))
             }
             if let note { content.append(TextView(note, size: 13, color: .muted)) }   // .stop-note 0.8125rem, its own line
-            // .stop-gate 0.8125rem muted, its own line; the gate in <b> 600 ink
+            // .stop-gate 0.8125rem muted, inline after the time; the gate in <b> 600 ink
             // with a researched short form: "检票口 <b>10/11</b>"; else 12306's own words in <b>
             if let gate {
                 content.append(TextView(gate.label.map { [Run(text: "检票口 ", size: 13, color: .muted), Run(text: $0, size: 13, weight: 600)] }
@@ -661,9 +661,9 @@ final class RouteRow: UIView {
             }
             content.append(TextView("\(className[cls] ?? "")，\(span(minutes))", size: 13, color: .muted))
             content.append(contentsOf: seatViews(state))
-        case .xfer(let text, let walk):
-            // .xfer: the line breaks; a change of station dashed (.xfer.walk .bar 3px dashed); the wait in the gap
-            let b = Border(walk ? .muted : .clear, UIEdgeInsets(top: 0, left: 3, bottom: 0, right: 0))
+        case .xfer(let text):
+            // .xfer: the line breaks, joined by a dashed connector (.xfer .bar 3px dashed); the wait in the gap
+            let b = Border(.muted, UIEdgeInsets(top: 0, left: 3, bottom: 0, right: 0))
             b.dashed = true
             track = [b]
             content = [TextView(text, .num, size: 18, weight: 700)]   // .xfer-text 1.125rem/700 Archivo, ink: the wait is a key figure
@@ -775,11 +775,14 @@ final class RouteRow: UIView {
                 // .stop-text: padding 8px 0 8px 12px, flex-wrap baseline, column-gap 10px; the note and the gate each on
                 // their own line
                 let texts = row.content.compactMap { $0 as? TextView }
-                let own = (note != nil ? 1 : 0) + (gate != nil ? 1 : 0)
-                for t in texts.suffix(own) { t.wrap(cw - 12) }
+                // the note on its own line; the 检票口 inline after the time (.stop-gate, no flex-basis), wrapping only if too long
+                // texts: name, time(s), note?, 检票口?
+                let noteAt = note == nil ? -1 : texts.count - 1 - (gate != nil ? 1 : 0)
+                if noteAt >= 0 { texts[noteAt].wrap(cw - 12) }
+                if gate != nil, let g = texts.last, g.naturalWidth > cw - 12 { g.wrap(cw - 12) }
                 let items = texts.map { ($0 as UIView, CGSize(width: min($0.naturalWidth, cw - 12), height: $0.height), Optional($0.firstBaseline)) }
                 let th = RouteRow.flow(items, x0: cx + 12, y0: y + 8, w: cw - 12, gapX: 10, gapY: 0,
-                                       breakBefore: { $0 >= texts.count - own })
+                                       breakBefore: { $0 == noteAt })
                 h = th + 16
                 let size: CGFloat = xchg ? 22 : 18
                 let (inL, outL, node) = (row.track[0], row.track[1], row.track[2] as! Border)

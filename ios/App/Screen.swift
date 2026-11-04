@@ -521,7 +521,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
         return v
     }
 
-    /// .legend: one swatch per train class on screen, and the walk when a route changes stations.
+    /// .legend: one swatch per train class on screen, and the transfer's dashed connector when a route has one.
     private func legend(_ visible: [Route]) -> UIView {
         let v = UIView()
         for c in ["G", "D", "C", "P"] where visible.contains(where: { $0.legs.contains { trainClass($0.train) == c } }) {
@@ -530,12 +530,12 @@ final class Screen: UIViewController, UITextFieldDelegate {
             v.addSubview(sw)
             v.addSubview(TextView(className[c]!, size: 14, color: .muted))
         }
-        if visible.contains(where: { r in r.legs.indices.contains { $0 > 0 && r.legs[$0 - 1].to != r.legs[$0].from } }) {
+        if visible.contains(where: { $0.transfers > 0 }) {
             let sw = Border(.muted, UIEdgeInsets(top: 3, left: 0, bottom: 0, right: 0))
             sw.dashed = true
             sw.frame.size = CGSize(width: 28, height: 3)
             v.addSubview(sw)
-            v.addSubview(TextView("出站换乘", size: 14, color: .muted))
+            v.addSubview(TextView("换乘", size: 14, color: .muted))
         }
         return v
     }
@@ -563,7 +563,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
         var items: [RouteRow.Item] = []
         for (k, (l, s, code, cls, gate, terminus)) in info.enumerated() {
             let p = k > 0 ? info[k - 1] : nil
-            if let p { items.append(.init(kind: .xfer(text: span(l.depart - p.0.arrive), walk: p.0.to != l.from))) }
+            if let p { items.append(.init(kind: .xfer(text: span(l.depart - p.0.arrive)))) }
             items.append(.init(kind: .stop(name: st(l.from), times: [(clock(l.depart), "")], note: nil, gate: gate.0,
                                            inLine: nil, outLine: cls, xchg: false)))
             items.append(.init(kind: .leg(code: code, cls: cls, minutes: l.arrive - l.depart, terminus: terminus, state: s)))
