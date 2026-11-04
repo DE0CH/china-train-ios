@@ -109,6 +109,7 @@ final class ChinaTrainUITests: XCTestCase {
     /// Where things are, both ways: prints WebKit's boxes and line rects and the native line boxes (GEOM lines), the
     /// numbers behind the pixel comparison.
     func testGeometry() throws {
+        var dumps: [String: String] = [:]
         for mode in ["native", "html"] {
             XCUIDevice.shared.orientation = .portrait
             let app = launch(["-fixture", "-reset", "-geometry"] + (mode == "html" ? ["-reference"] : []))
@@ -117,8 +118,30 @@ final class ChinaTrainUITests: XCTestCase {
             let end = Date().addingTimeInterval(10)
             while Date() < end && (probe.label.isEmpty || !probe.exists) { Thread.sleep(forTimeInterval: 0.5) }
             print("GEOM \(mode) \(probe.exists ? probe.label : "none")")
+            dumps[mode] = probe.exists ? probe.label : ""
             app.terminate()
         }
+        // the first texts that sit at different heights, or are on one side only: GEOMDIFF lines (the log's summary)
+        func items(_ s: String?) -> [[Any]] {
+            ((try? JSONSerialization.jsonObject(with: Data((s ?? "").utf8))) as? [String: Any])?["items"] as? [[Any]] ?? []
+        }
+        var native = items(dumps["native"]).compactMap { i -> (String, Double)? in
+            guard let t = i.first as? String, i.count > 2, let y = (i[2] as? NSNumber)?.doubleValue else { return nil }
+            return (String(t.trimmingCharacters(in: .whitespaces).prefix(16)), y)
+        }
+        let html = items(dumps["html"]).compactMap { i -> (String, Double)? in
+            guard i.count > 3, let t = i[1] as? String, let y = (i[3] as? NSNumber)?.doubleValue, !t.isEmpty else { return nil }
+            return (t, y)
+        }.sorted { $0.1 < $1.1 }
+        var reported = 0
+        for (t, y) in html where reported < 8 {
+            guard let k = native.indices.filter({ native[$0].0 == t }).min(by: { abs(native[$0].1 - y) < abs(native[$1].1 - y) }) else {
+                print("GEOMDIFF only in the page: \(t) at y \(Int(y))"); reported += 1; continue
+            }
+            if abs(native[k].1 - y) > 2 { print("GEOMDIFF \(t): page y \(Int(y)), native y \(Int(native[k].1))"); reported += 1 }
+            native.remove(at: k)
+        }
+        for (t, y) in native.prefix(max(0, 8 - reported)) where !t.isEmpty { print("GEOMDIFF only native: \(t) at y \(Int(y))") }
     }
 
     /// The native screen against china-train's page (`-reference`), state by state on the fixture. Prints the share of

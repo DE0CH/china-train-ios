@@ -25,7 +25,7 @@ enum GeometryProbe {
       if (!document.querySelector('.status:not(.s-checking)')) return;
       clearInterval(t);
       setTimeout(() => {
-        const sel = 'h1,.sub,.sign label,.pinyin,.swap-label,.day span,.day b,.preset,.status-text b,.status-text span,.refresh,.seg button,.count,.legend li,.when .t,.when .dur,.verdict,.stop-name,.stop-time b,.stop-time span,.stop-note,.train,.leg-dur,.seat span,.seat b,.walk-text,.sign input';
+        const sel = 'h1,.sub,.sign label,.pinyin,.swap-label,.day span,.day b,.preset,.status-text b,.status-text span,.refresh,.seg button,.count,.legend li,.when .t,.when .dur,.verdict,.stop-name,.stop-time b,.stop-time span,.stop-note,.train,.leg-dur,.seat span,.seat b,.walk-text,.sign input,.stop-gate,.leg-to';
         const items = [];
         document.querySelectorAll(sel).forEach((e, i) => {
           if (i > 400) return;
@@ -37,7 +37,7 @@ enum GeometryProbe {
           items.push([e.tagName.toLowerCase() + '.' + (e.className || ''), (e.value || e.textContent || '').trim().slice(0, 16), r.x, r.y + scrollY, r.width, r.height, line]);
         });
         window.webkit.messageHandlers.geometry.postMessage(JSON.stringify({ items, width: innerWidth }));
-      }, 300);
+      }, 2000);   // after the 检票口 lookups that follow the seats
     }, 100); })();
     """
 }

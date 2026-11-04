@@ -109,7 +109,7 @@ jobs:
           print(f"screenshots: {n}")
           PY
           # failures and the per-state comparisons as annotations too: they are readable without signing in to GitHub
-          grep -E "error:|Test Case .*failed|XCTAssert|COMPARE " "$RUNNER_TEMP/test.log" | head -9 \
+          grep -E "error:|Test Case .*failed|XCTAssert|COMPARE |GEOMDIFF" "$RUNNER_TEMP/test.log" | head -9 \
             | while IFS= read -r l; do echo "::warning title=replica::${l:0:900}"; done || true
           grep -qE "\*\* TEST (EXECUTE )?SUCCEEDED \*\*" "$RUNNER_TEMP/test.log"
       - name: Keep the replica screenshots and log
