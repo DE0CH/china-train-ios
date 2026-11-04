@@ -129,19 +129,24 @@ final class ChinaTrainUITests: XCTestCase {
             guard let t = i.first as? String, i.count > 2, let y = (i[2] as? NSNumber)?.doubleValue else { return nil }
             return (String(t.trimmingCharacters(in: .whitespaces).prefix(16)), y)
         }
+        // the route rows only (where the two can drift apart line by line); WebKit's span boxes are their line boxes
+        let rowParts = ["span.stop-name", "span.train", "span.stop-gate", "span.leg-to", "span.leg-dur", "span.stop-note", "span.walk-text"]
         let html = items(dumps["html"]).compactMap { i -> (String, Double)? in
-            guard i.count > 3, let t = i[1] as? String, let y = (i[3] as? NSNumber)?.doubleValue, !t.isEmpty else { return nil }
+            guard i.count > 3, let c = i[0] as? String, rowParts.contains(c), let t = i[1] as? String, let y = (i[3] as? NSNumber)?.doubleValue, !t.isEmpty
+            else { return nil }
             return (t, y)
         }.sorted { $0.1 < $1.1 }
+        let firstRow = html.first?.1 ?? 0
+        native = native.filter { $0.1 >= firstRow - 40 }
         var reported = 0
-        for (t, y) in html where reported < 8 {
+        for (t, y) in html where reported < 5 {
             guard let k = native.indices.filter({ native[$0].0 == t }).min(by: { abs(native[$0].1 - y) < abs(native[$1].1 - y) }) else {
                 print("GEOMDIFF only in the page: \(t) at y \(Int(y))"); reported += 1; continue
             }
             if abs(native[k].1 - y) > 2 { print("GEOMDIFF \(t): page y \(Int(y)), native y \(Int(native[k].1))"); reported += 1 }
             native.remove(at: k)
         }
-        for (t, y) in native.prefix(max(0, 8 - reported)) where !t.isEmpty { print("GEOMDIFF only native: \(t) at y \(Int(y))") }
+        if reported == 0 { print("GEOMDIFF none: \(html.count) row texts at the same heights") }
     }
 
     /// The native screen against china-train's page (`-reference`), state by state on the fixture. Prints the share of
