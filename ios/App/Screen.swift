@@ -276,15 +276,24 @@ final class Screen: UIViewController, UITextFieldDelegate {
                     days[p[1] + "|" + p[2]] = .some(TrainDay(runs: r))
                 } else {
                     var g = ""
-                    if Flags.fixture { try? await Task.sleep(nanoseconds: 50_000_000); g = fixtureGate(code: p[1], station: p[3]) }
+                    if Flags.fixture { g = fixtureGate(code: p[1], station: p[3]) }
                     else { g = (try? await TwelveOhSix.shared.gate(code: p[1], date: p[2], station: p[3], start: p[4])) ?? "" }   // a failure: none
                     gates[p[1...3].joined(separator: "|")] = .some(g)
                 }
                 dayBusy -= 1
-                renderResults()
+                renderSoon()
                 askDays()
             }
         }
+    }
+
+    /// One redraw for the side lookups that land within 100 ms of each other: each would otherwise rebuild every row,
+    /// and a hundred of them in a row keep the screen changing for seconds.
+    private var renderPending = false
+    private func renderSoon() {
+        guard !renderPending else { return }
+        renderPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in renderPending = false; renderResults() }
     }
 
     /// "code|YYYY-MM-DD|telecode": a leg's train, the date it leaves its boarding station, and that station.
