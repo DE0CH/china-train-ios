@@ -8,6 +8,6 @@ const idx = (s) => tt.byCode.get(s) ?? tt.stations.findIndex((x) => x.name === s
 const o = { ...P.DEFAULT_OPTIONS, ...(sce ? { sameCityEnds: sce === "1" } : {}), ...(mw ? { maxWait: +mw } : {}) };
 for (const r of P.plan(tt, idx(from), idx(to), o))
   console.log(r.depart, r.arrive, r.transfers, r.legs.map((l) => `${l.train}/${l.trainNo}@${tt.stations[l.from].code}-${tt.stations[l.to].code} ${l.depart}-${l.arrive}`).join(" > "));
-for (const q of ["sz", "shenzhen", "香港", "IFQ", "北京", "gz"]) console.log("search", q, P.searchStations(tt, q).map((i) => tt.stations[i].code).join(","));
+for (const q of ["sz", "shenzhen", "香港", "IFQ", "北京", "gz", "shenzen", "szhbei", "深北", "guangzhounna", "xjl", "hk xijiulong", "Shenzhen North", "hong kong", "beijng", "shenzhen north station"]) console.log("search", q, P.searchStations(tt, q).map((i) => tt.stations[i].code).join(","));
 const addDays = (iso, n) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 console.log("clock", P.clock(1500), P.clock(65), P.span(48), P.span(120), P.span(135), addDays("2026-12-31", 1));

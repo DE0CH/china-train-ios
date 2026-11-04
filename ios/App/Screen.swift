@@ -156,7 +156,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
         let pair = (names.0 != nil && names.1 != nil) ? [names.0!, names.1!] : (Prefs.last ?? [presets[0].0, presets[0].1])
         from = t.index(of: pair[0])
         to = pair.count > 1 ? t.index(of: pair[1]) : nil
-        for s in [board.fromSign, board.toSign] { s.field.isEnabled = true; s.placeholder("站名、拼音或首字母") }
+        for s in [board.fromSign, board.toSign] { s.field.isEnabled = true; s.placeholder("站名、拼音、英文或首字母") }
         changed()
     }
 

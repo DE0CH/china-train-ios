@@ -159,19 +159,72 @@ private func pareto(_ rs: [Route]) -> [Route] {
 }
 
 /// Station search for the pickers: name, full pinyin, initials or telecode.
+/// Station search, as lib/planner.ts: exact and prefix matches on the name, initials, telecode and the Latin keys
+/// (pinyin and an English name: a trailing 北/南/东/西 read as north/south/east/west) first; then the typed characters in
+/// order with gaps (深北 → 深圳北, szhbei → shenzhenbei), fewest gaps first; then a key with a typo or two (1 edit from
+/// 4 letters, 2 from 7, against the key's best prefix). Spaces and a final "station" are ignored.
+private let direction: [Character: (String, String)] = ["北": ("bei", "north"), "南": ("nan", "south"), "东": ("dong", "east"), "西": ("xi", "west")]
+private let extraKeys = ["香港西九龙": ["xianggangxijiulong", "hongkongwestkowloon", "westkowloon", "xijiulong"]]   // 12306's pinyin isn't
+
+private func latinKeys(_ st: Station) -> [String] {
+    var keys = [st.pinyin] + (extraKeys[st.name] ?? [])
+    if let last = st.name.last, let dir = direction[last], st.name.count >= 3, st.pinyin.hasSuffix(dir.0) {
+        keys.append(String(st.pinyin.dropLast(dir.0.count)) + dir.1)
+    }
+    return keys
+}
+
+/// q's characters found in s in order (each at the first place it can go): the gaps left between them, or -1.
+private func gapsInOrder(_ q: [Character], _ s: [Character]) -> Int {
+    var j = 0, gaps = 0, last = -1
+    for (i, c) in s.enumerated() where j < q.count && c == q[j] {
+        if last >= 0 && i > last + 1 { gaps += 1 }
+        last = i
+        j += 1
+    }
+    return j == q.count ? gaps : -1
+}
+
+/// Edits to turn q into some prefix of s (Levenshtein with a free tail of s).
+private func prefixEdits(_ q: [Character], _ s: [Character]) -> Int {
+    var prev = Array(0...s.count)
+    for i in stride(from: 1, through: q.count, by: 1) {
+        var cur = [i] + Array(repeating: 0, count: s.count)
+        for j in stride(from: 1, through: s.count, by: 1) {
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (q[i - 1] == s[j - 1] ? 0 : 1))
+        }
+        prev = cur
+    }
+    return prev.min()!
+}
+
 func searchStations(_ tt: Timetable, _ q: String, limit: Int = 8) -> [Int] {
-    let t = q.trimmingCharacters(in: .whitespaces), s = t.lowercased()
+    let t = q.trimmingCharacters(in: .whitespaces)
+    var s = String(t.lowercased().filter { !$0.isWhitespace })
+    let isLatin = { (x: String) in !x.isEmpty && x.unicodeScalars.allSatisfy { $0.value >= 97 && $0.value <= 122 } }
+    if isLatin(s) && s.count > 7 {
+        if s.hasSuffix("railwaystation") { s.removeLast(14) } else if s.hasSuffix("station") { s.removeLast(7) }
+    }
     if s.isEmpty { return [] }
+    let latin = isLatin(s)
+    let typos = !latin || s.count < 4 ? 0 : s.count < 7 ? 1 : 2
+    let qs = Array(s)
     var scored: [(Int, Int)] = []
     for (i, st) in tt.stations.enumerated() where !tt.byStation[i].isEmpty {
-        var score = -1
+        let keys = latin ? latinKeys(st) : []
+        var score = -1, near = 0
         if st.name == t { score = 0 }
         else if st.name.hasPrefix(t) { score = 1 }
-        else if st.abbr == s || st.pinyin == s { score = 2 }
-        else if st.abbr.hasPrefix(s) || st.pinyin.hasPrefix(s) { score = 3 }
+        else if st.abbr == s || keys.contains(s) { score = 2 }
+        else if st.abbr.hasPrefix(s) || keys.contains(where: { $0.hasPrefix(s) }) { score = 3 }
         else if st.code.lowercased() == s { score = 3 }
         else if st.name.contains(t) || st.city.hasPrefix(t) { score = 4 }
-        if score >= 0 { scored.append((score * 100000 - tt.byStation[i].count, i)) }
+        else if qs.count >= 2 {
+            let gaps = (latin ? keys.filter { $0.first == qs[0] } : [st.name]).map { gapsInOrder(qs, Array($0)) }.filter { $0 >= 0 }
+            if let g = gaps.min() { score = 5; near = g }
+            else if typos > 0, let d = keys.map({ prefixEdits(qs, Array($0)) }).min(), d <= typos { score = 6; near = d }
+        }
+        if score >= 0 { scored.append((score * 100000 + min(near, 9) * 10000 - min(tt.byStation[i].count, 9999), i)) }
     }
     return stableSorted(scored) { $0.0 < $1.0 }.prefix(limit).map(\.1)
 }
