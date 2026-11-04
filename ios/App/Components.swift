@@ -648,7 +648,7 @@ final class RouteRow: UIView {
                 content.append(TextView(gate.label.map { [Run(text: "检票口 ", size: 13, color: .muted), Run(text: $0, size: 13, weight: 600)] }
                                         ?? [Run(text: gate.raw, size: 13, weight: 600)]))
             }
-        case .leg(let code, let cls, let minutes, let terminus, let state):
+        case .leg(let code, let cls, _, let terminus, let state):
             track = [Box(.line(cls))]
             let badge = Box(.line(cls))
             badge.isUserInteractionEnabled = false
@@ -659,7 +659,6 @@ final class RouteRow: UIView {
             if let terminus, !terminus.isEmpty {
                 content.append(TextView([Run(text: "终到站", size: 13, color: .muted, marginRight: 4), Run(text: terminus, size: 13, weight: 600)]))
             }
-            content.append(TextView("\(className[cls] ?? "")，\(span(minutes))", size: 13, color: .muted))
             content.append(contentsOf: seatViews(state))
         case .xfer(let text):
             // .xfer: the line breaks, joined by a dashed connector (.xfer .bar 3px dashed); the wait in the gap
@@ -795,7 +794,7 @@ final class RouteRow: UIView {
             case .leg(_, _, _, let terminus, _):
                 // .leg-info: padding 4px 0 10px 12px, column, gap 6px; .leg-head: centre, gap 4px 10px
                 let badge = row.content[0], bt = badge.subviews.first as! TextView
-                let head = terminus?.isEmpty == false ? 3 : 2   // the badge, 终到站 when known, the duration
+                let head = terminus?.isEmpty == false ? 2 : 1   // the badge, 终到站 when known
                 badge.frame.size = CGSize(width: 8 + bt.naturalWidth + 8, height: 5 + bt.height + 4)
                 bt.frame = CGRect(x: 8, y: 5, width: bt.naturalWidth, height: bt.height)
                 let texts = row.content[1..<head].map { $0 as! TextView }

@@ -301,6 +301,7 @@ enum GateLabels {
            Date().timeIntervalSince(at) < 86400 { return }
         var r = URLRequest(url: url)
         r.cachePolicy = .reloadIgnoringLocalCacheData
+        r.timeoutInterval = 20
         guard let res = try? await URLSession.shared.data(for: r), (res.1 as? HTTPURLResponse)?.statusCode == 200 else { return }
         let data = res.0
         guard !load(data).isEmpty || String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "{}" else { return }

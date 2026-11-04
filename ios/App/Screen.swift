@@ -429,11 +429,24 @@ final class Screen: UIViewController, UITextFieldDelegate {
         renderResults()
     }
 
-    /// A route is hidden once 12306 says one of its trains does not run that day, or (today) once it has arrived.
+    /// A route is hidden when 12306's seat answer says one of its trains does not run that day, or (today) once it has
+    /// arrived by the time the seats were checked; decided when the list first appears: a later check marks a leg
+    /// 当日不开行 in place, and the live clock moves no card (the list shows once the seats are in; what comes after fills
+    /// lines already drawn).
     private func runs(_ r: Route) -> Bool {
         guard let tt else { return true }
-        if let n = nowMinutes, r.arrive <= n { return false }
-        return r.legs.allSatisfy { legState(tt, $0)?.missing != true }
+        var cut: Int?
+        if let at = checkedAt, date == isoFormatter().string(from: at) {
+            let c = Calendar.current.dateComponents([.hour, .minute], from: at)
+            cut = c.hour! * 60 + c.minute!
+        }
+        if let cut, r.arrive <= cut { return false }
+        return r.legs.allSatisfy { l in
+            switch legs[legKey(tt, l)] {
+            case .none, .failure: return true
+            case .success(let m): return m[l.trainNo] != nil || (cut != nil && l.depart < cut! + salesClose)
+            }
+        }
     }
 
     /// What a leg shows: seats, 当日不开行, or for today's train that stopped selling, 已发车 / 停止售票 once its run is known.
