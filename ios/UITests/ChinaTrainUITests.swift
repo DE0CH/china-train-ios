@@ -15,13 +15,14 @@ final class ChinaTrainUITests: XCTestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR identifier == %@", label, label)).firstMatch
     }
 
-    /// Waits for the seat check to commit (the status bar's settled title).
+    /// Waits for the seat check to commit (the status bar's settled title), then 2 s for the side lookups (检票口,
+    /// whether a train runs) that redraw the rows after it.
     private func settled(_ app: XCUIApplication, _ seconds: TimeInterval = 90) -> String? {
         let end = Date().addingTimeInterval(seconds)
         while Date() < end {
             for t in ["余票已核对", "段余票查询失败", "分钟前的"] {
                 let q = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", t)).firstMatch
-                if q.exists { return q.label }
+                if q.exists { let label = q.label; Thread.sleep(forTimeInterval: 2); return label }
             }
             Thread.sleep(forTimeInterval: 0.5)
         }
@@ -139,7 +140,7 @@ final class ChinaTrainUITests: XCTestCase {
                     print("ROTATE \(mode) landscape \(Date().timeIntervalSince1970)")
                     XCUIDevice.shared.orientation = .landscapeLeft
                 }
-                Thread.sleep(forTimeInterval: 2)
+                Thread.sleep(forTimeInterval: 3)   // the -scroll lands 1.5 s after the seats
                 pair[mode] = XCUIScreen.main.screenshot()
                 app.terminate()
             }
@@ -165,7 +166,16 @@ final class ChinaTrainUITests: XCTestCase {
             diff[i * 4 + 3] = 255
         }
         let share = Double(differ) / Double(a.width * a.height)
-        print("COMPARE \(name): differing \(String(format: "%.4f", share * 100))%")
+        // where: the bands of rows (in points from the top) with differing pixels, so a failure reads from the log alone
+        var bands: [(Int, Int)] = [], scale = max(1, a.width / 400)
+        for y in 0..<a.height {
+            var n = 0
+            for x in 0..<a.width where abs(Int(a.pixels[y * a.width + x]) - Int(b.pixels[y * a.width + x])) > 60 { n += 1 }
+            guard n > 2 else { continue }
+            if let last = bands.last, y - last.1 <= 4 * scale { bands[bands.count - 1].1 = y } else { bands.append((y, y)) }
+        }
+        let where_ = bands.prefix(12).map { "\($0.0 / scale)-\($0.1 / scale)" }.joined(separator: " ")
+        print("COMPARE \(name): differing \(String(format: "%.4f", share * 100))% at y \(where_)")
         for (label, image) in [("native", native.image), ("html", html.image), ("diff", Gray.image(diff, a.width, a.height))] {
             let attachment = XCTAttachment(image: image)
             attachment.name = "cmp-\(name)-\(label)"

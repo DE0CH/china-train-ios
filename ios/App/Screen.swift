@@ -469,9 +469,12 @@ final class Screen: UIViewController, UITextFieldDelegate {
         layoutPage()
         if Flags.geometry, checkedAt != nil { dumpGeometry() }
         if let y = Flags.scroll, checkedAt != nil, !scrolledForTest {
+            // 1.5 s after the seats are in, when the 检票口 lookups have landed (as the reference does)
             scrolledForTest = true
-            scroll.layoutIfNeeded()
-            scroll.contentOffset.y = min(y, max(0, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)) - scroll.adjustedContentInset.top
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [self] in
+                scroll.layoutIfNeeded()
+                scroll.contentOffset.y = min(y, max(0, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)) - scroll.adjustedContentInset.top
+            }
         }
     }
 

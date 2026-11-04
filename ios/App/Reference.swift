@@ -30,7 +30,7 @@ final class ReferenceController: UIViewController {
         if let y = Flags.scroll {
             script += """
             (() => { const t = setInterval(() => { if (document.querySelector('.status:not(.s-checking)')) {
-              clearInterval(t); window.scrollTo(0, \(Int(y))); } }, 100); })();
+              clearInterval(t); setTimeout(() => window.scrollTo(0, \(Int(y))), 1500); } }, 100); })();
             """
         }
         if Flags.geometry {
