@@ -311,7 +311,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
         for s in [board.fromSign, board.toSign] {
             let st = value(s).flatMap { tt?.stations[$0] }
             if editingSign !== s { s.field.text = st?.name ?? "" }
-            s.pinyin.set([Run(text: st != nil && editingSign !== s ? pinyinLabel(st!.pinyin) : " ", face: .num, size: 17, weight: 500, color: .muted)])
+            s.pinyin.set([Run(text: st != nil && editingSign !== s ? pinyinLabel(st!) : " ", face: .num, size: 17, weight: 500, color: .muted)])
             s.field.accessibilityValue = st?.name
         }
     }

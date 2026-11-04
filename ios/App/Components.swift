@@ -23,7 +23,10 @@ class Tap: UIControl {
     @objc private func fire() { onTap() }
 }
 
-func pinyinLabel(_ p: String) -> String { p.prefix(1).uppercased() + String(p.dropFirst()) }
+/// A station's Latin name, as the page writes it: its pinyin as China Railway's signs write it (Shenzhenbei); 12306's
+/// pinyin field for 香港西九龙 is an abbreviation (hkwestkowloon), so it gets its English name.
+private let latinNames = ["香港西九龙": "Hong Kong West Kowloon"]
+func pinyinLabel(_ s: Station) -> String { latinNames[s.name] ?? s.pinyin.prefix(1).uppercased() + String(s.pinyin.dropFirst()) }
 
 // ---- header: `.top` ---------------------------------------------------------------------------------------------
 
@@ -147,7 +150,7 @@ final class SuggestList: UIView {
             let row = Tap()
             row.backgroundColor = on ? .ink : .clear
             let name = TextView(s.name, size: 17, weight: 700, color: on ? .panel : .ink)   // .s-name 1.0625rem/700
-            let meta = TextView((s.city != s.name ? "\(s.city)　" : "") + pinyinLabel(s.pinyin), .num, size: 15, color: on ? .panel : .muted)
+            let meta = TextView((s.city != s.name ? "\(s.city)　" : "") + pinyinLabel(s), .num, size: 15, color: on ? .panel : .muted)
             row.addSubview(name)
             row.addSubview(meta)
             row.accessibilityIdentifier = "suggest-\(s.name)"
