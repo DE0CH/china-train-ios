@@ -704,8 +704,9 @@ final class RouteRow: UIView {
             p.addSubview(cell)
             p.addSubview(label)
             p.addSubview(count)
-            let lw = 6 + label.naturalWidth + 6, cw = max(28, 7 + count.naturalWidth + 7)
-            label.frame = CGRect(x: 1 + 6, y: 1, width: label.naturalWidth, height: label.height)
+            // .seat > span padding 0 4px; .seat b padding 0 5px, min-width 24px
+            let lw = 4 + label.naturalWidth + 4, cw = max(24, 5 + count.naturalWidth + 5)
+            label.frame = CGRect(x: 1 + 4, y: 1, width: label.naturalWidth, height: label.height)
             cell.frame = CGRect(x: 1 + lw, y: 1, width: cw, height: count.height)
             count.frame = CGRect(x: 1 + lw + (cw - count.naturalWidth) / 2, y: 1, width: count.naturalWidth, height: count.height)
             p.frame.size = CGSize(width: lw + cw + 2, height: count.height + 2)   // the items stretch to the count's 25px
@@ -800,9 +801,17 @@ final class RouteRow: UIView {
                 if let only = seats.first as? TextView, seats.count == 1 {
                     only.frame = CGRect(x: cx + 12, y: y + 4 + hh + 6, width: only.naturalWidth, height: only.height)
                     sh = only.height
+                } else if seats.count == 4 && cw - 12 <= 268 {
+                    // @container (max-width: 268px): four plates two by two (max-content columns, gap 4px), never 3 + 1
+                    let col0 = max(seats[0].frame.width, seats[2].frame.width), row0 = max(seats[0].frame.height, seats[1].frame.height)
+                    let y0 = y + 4 + hh + 6
+                    for (k, v) in seats.enumerated() {
+                        v.frame.origin = CGPoint(x: cx + 12 + (k % 2 == 0 ? 0 : col0 + 4), y: y0 + (k < 2 ? 0 : row0 + 4))
+                    }
+                    sh = row0 + 4 + max(seats[2].frame.height, seats[3].frame.height)
                 } else {
                     sh = RouteRow.flow(seats.map { ($0, $0.frame.size, CGFloat?.none) }, x0: cx + 12, y0: y + 4 + hh + 6, w: cw - 12,
-                                       gapX: seats.count == 1 ? 4 : 6, gapY: seats.count == 1 ? 2 : 6)
+                                       gapX: 4, gapY: seats.count == 1 ? 2 : 4)
                 }
                 h = max(56, 4 + hh + 6 + sh + 10)
                 row.track[0].frame = CGRect(x: tx + 11, y: y, width: 6, height: h)
