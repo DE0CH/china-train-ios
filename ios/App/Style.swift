@@ -159,22 +159,38 @@ final class TextView: UIView {
         setNeedsDisplay()
     }
 
-    /// Breaks a single-run text into lines no wider than `width` (Chinese breaks between any two characters).
+    /// Breaks the text into lines no wider than `width` (Chinese breaks between any two characters); a line keeps the
+    /// runs' styles, so "检票口 <b>…</b>" wraps as the page's inline text does.
     @discardableResult
     func wrap(_ width: CGFloat) -> CGFloat {
-        guard runs.count == 1, let r = runs.first else { return height }
-        let attr = NSAttributedString(string: r.text, attributes: [.init(kCTFontAttributeName as String): r.font])
+        guard !runs.isEmpty else { return height }
+        let attr = NSMutableAttributedString()
+        var bounds: [(Run, NSRange)] = []
+        for r in runs {
+            let at = attr.length
+            attr.append(NSAttributedString(string: r.text, attributes: [.init(kCTFontAttributeName as String): r.font]))
+            bounds.append((r, NSRange(location: at, length: attr.length - at)))
+        }
         let typesetter = CTTypesetterCreateWithAttributedString(attr)
+        let ns = attr.string as NSString
         var start = 0, out: [InlineLine] = []
-        let ns = r.text as NSString
         while start < ns.length {
             let n = max(1, CTTypesetterSuggestLineBreak(typesetter, start, Double(width)))
-            var part = r
-            part.text = ns.substring(with: NSRange(location: start, length: n)).trimmingCharacters(in: .whitespaces)
-            out.append(InlineLine([part]))
+            var parts: [Run] = []
+            for (r, range) in bounds {
+                let lo = max(range.location, start), hi = min(range.location + range.length, start + n)
+                guard lo < hi else { continue }
+                var part = r
+                part.text = ns.substring(with: NSRange(location: lo, length: hi - lo))
+                parts.append(part)
+            }
+            // spaces at a break are dropped, as WebKit does
+            if !parts.isEmpty, out.count > 0 || start > 0 { while parts.first?.text.first == " " { parts[0].text.removeFirst(); if parts[0].text.isEmpty { parts.removeFirst() } } }
+            while let l = parts.last, l.text.last == " " { parts[parts.count - 1].text.removeLast(); if parts[parts.count - 1].text.isEmpty { parts.removeLast() } }
+            if !parts.isEmpty { out.append(InlineLine(parts)) }
             start += n
         }
-        if out.isEmpty { out = [InlineLine([r])] }
+        if out.isEmpty { out = [InlineLine(runs)] }
         lines = out
         setNeedsDisplay()
         return height

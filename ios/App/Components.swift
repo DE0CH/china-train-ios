@@ -576,8 +576,8 @@ struct LegState {
 
 final class RouteRow: UIView {
     struct Item {
-        enum Kind { case stop(name: String, times: [(String, String)], note: String?, inLine: String?, outLine: String?, xchg: Bool),
-                         leg(code: String, cls: String, minutes: Int, state: LegState?), walk(text: String) }
+        enum Kind { case stop(name: String, times: [(String, String)], note: String?, gate: String?, inLine: String?, outLine: String?, xchg: Bool),
+                         leg(code: String, cls: String, minutes: Int, terminus: String?, state: LegState?), walk(text: String) }
         let kind: Kind
     }
 
@@ -632,7 +632,7 @@ final class RouteRow: UIView {
     private func add(_ kind: Item.Kind) {
         var track: [UIView] = [], content: [UIView] = []
         switch kind {
-        case .stop(let name, let times, let note, let inLine, let outLine, let xchg):
+        case .stop(let name, let times, let note, let gate, let inLine, let outLine, let xchg):
             track = [line(inLine), line(outLine), Border(.ink, UIEdgeInsets(top: 4, left: 4, bottom: 4, right: 4), fill: .panel)]
             if xchg { track.append(Box(.ink)) }
             content.append(TextView(name, size: 16, weight: 700, lineHeight: 21.6))   // .stop-name 1rem/700, 1.35
@@ -642,13 +642,20 @@ final class RouteRow: UIView {
                 content.append(TextView([strut, Run(text: t, face: .num, size: 18, weight: 600, marginRight: 3), Run(text: k, size: 14, color: .muted)]))
             }
             if let note { content.append(TextView(note, size: 13, color: .muted)) }   // .stop-note 0.8125rem, its own line
-        case .leg(let code, let cls, let minutes, let state):
+            // .stop-gate 0.8125rem muted, its own line; the gate in <b> 600 ink
+            if let gate { content.append(TextView([Run(text: "检票口 ", size: 13, color: .muted), Run(text: gate, size: 13, weight: 600)])) }
+        case .leg(let code, let cls, let minutes, let terminus, let state):
             track = [Box(.line(cls))]
             let badge = Box(.line(cls))
             badge.isUserInteractionEnabled = false
             let bt = TextView(code, .num, size: 18, weight: 700, color: .onLine, lineHeight: 18)   // .train 1.125rem/700, line-height 1
             badge.addSubview(bt)
-            content = [badge, TextView("\(className[cls] ?? "")，\(span(minutes))", size: 13, color: .muted)]
+            content = [badge]
+            // .leg-to 0.8125rem muted, the station in <b> 600 ink with 4px before it
+            if let terminus, !terminus.isEmpty {
+                content.append(TextView([Run(text: "终到站", size: 13, color: .muted, marginRight: 4), Run(text: terminus, size: 13, weight: 600)]))
+            }
+            content.append(TextView("\(className[cls] ?? "")，\(span(minutes))", size: 13, color: .muted))
             content.append(contentsOf: seatViews(state))
         case .walk(let text):
             let b = Border(.muted, UIEdgeInsets(top: 0, left: 3, bottom: 0, right: 0))
@@ -757,13 +764,15 @@ final class RouteRow: UIView {
         for row in rows {
             var h: CGFloat
             switch row.kind {
-            case .stop(_, _, let note, _, _, let xchg):
-                // .stop-text: padding 8px 0 8px 12px, flex-wrap baseline, column-gap 10px; the note on its own line
+            case .stop(_, _, let note, let gate, _, _, let xchg):
+                // .stop-text: padding 8px 0 8px 12px, flex-wrap baseline, column-gap 10px; the note and the gate each on
+                // their own line
                 let texts = row.content.compactMap { $0 as? TextView }
-                if note != nil { texts.last!.wrap(cw - 12) }
+                let own = (note != nil ? 1 : 0) + (gate != nil ? 1 : 0)
+                for t in texts.suffix(own) { t.wrap(cw - 12) }
                 let items = texts.map { ($0 as UIView, CGSize(width: min($0.naturalWidth, cw - 12), height: $0.height), Optional($0.firstBaseline)) }
                 let th = RouteRow.flow(items, x0: cx + 12, y0: y + 8, w: cw - 12, gapX: 10, gapY: 0,
-                                       breakBefore: { note != nil && $0 == texts.count - 1 })
+                                       breakBefore: { $0 >= texts.count - own })
                 h = th + 16
                 let size: CGFloat = xchg ? 22 : 18
                 let (inL, outL, node) = (row.track[0], row.track[1], row.track[2] as! Border)
@@ -773,14 +782,16 @@ final class RouteRow: UIView {
                 outL.frame = CGRect(x: tx + 11, y: y + h / 2, width: outW, height: h / 2)
                 node.frame = CGRect(x: tx + (28 - size) / 2, y: y + (h - size) / 2, width: size, height: size)
                 if xchg, row.track.count > 3 { row.track[3].frame = node.frame.insetBy(dx: 7, dy: 7) }   // ::after, inset 3px in the border
-            case .leg:
+            case .leg(_, _, _, let terminus, _):
                 // .leg-info: padding 4px 0 10px 12px, column, gap 6px; .leg-head: centre, gap 4px 10px
-                let badge = row.content[0], bt = badge.subviews.first as! TextView, dur = row.content[1] as! TextView
+                let badge = row.content[0], bt = badge.subviews.first as! TextView
+                let head = terminus?.isEmpty == false ? 3 : 2   // the badge, 终到站 when known, the duration
                 badge.frame.size = CGSize(width: 8 + bt.naturalWidth + 8, height: 5 + bt.height + 4)
                 bt.frame = CGRect(x: 8, y: 5, width: bt.naturalWidth, height: bt.height)
-                let hh = RouteRow.flow([(badge, badge.frame.size, CGFloat?.none), (dur as UIView, CGSize(width: dur.naturalWidth, height: dur.height), CGFloat?.none)],
+                let texts = row.content[1..<head].map { $0 as! TextView }
+                let hh = RouteRow.flow([(badge, badge.frame.size, CGFloat?.none)] + texts.map { ($0 as UIView, CGSize(width: $0.naturalWidth, height: $0.height), CGFloat?.none) },
                                        x0: cx + 12, y0: y + 4, w: cw - 12, gapX: 10, gapY: 4)
-                let seats = Array(row.content.dropFirst(2))
+                let seats = Array(row.content.dropFirst(head))
                 var sh: CGFloat = 0
                 if let only = seats.first as? TextView, seats.count == 1 {
                     only.frame = CGRect(x: cx + 12, y: y + 4 + hh + 6, width: only.naturalWidth, height: only.height)

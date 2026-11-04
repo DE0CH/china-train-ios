@@ -91,9 +91,17 @@ final class SiteScheme: NSObject, WKURLSchemeHandler {
             let (from, to, date) = (q["from"] ?? "", q["to"] ?? "", q["date"] ?? "")
             if Flags.fixture {
                 try await Task.sleep(nanoseconds: 50_000_000)
-                return (apiJSON(fixtureSeats(try await table().1, from: from, to: to)), "application/json")
+                let tt = try await table().1
+                return (apiJSON(named(fixtureSeats(tt, from: from, to: to, date: date), tt)), "application/json")
             }
-            return (apiJSON(try await TwelveOhSix.shared.seats(from: from, to: to, date: date)), "application/json")
+            let seats = try await TwelveOhSix.shared.seats(from: from, to: to, date: date)
+            return (apiJSON(named(seats, try await table().1)), "application/json")
+        case "/api/gates":
+            let q = Dictionary(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.map { ($0.name, $0.value ?? "") } ?? [],
+                               uniquingKeysWith: { a, _ in a })
+            let (code, start) = (q["train"] ?? "", q["start"] ?? "")
+            let gates = Flags.fixture ? fixtureGates(try await table().1, code: code) : try await TwelveOhSix.shared.gates(code: code, start: start)
+            return ((try? JSONSerialization.data(withJSONObject: ["gates": gates])) ?? Data(), "application/json")
         default:
             let path = url.path == "/" || url.path.isEmpty ? "/index.html" : url.path
             guard let site = Bundle.main.url(forResource: "Site", withExtension: nil),

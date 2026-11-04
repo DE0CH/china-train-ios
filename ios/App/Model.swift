@@ -211,6 +211,29 @@ struct Seats: Equatable {
     var sw, yd, ed, wz: String
     var canBuy: Bool
     var code: String
+    var terminus = ""   // 终到站: 12306 gives its telecode; `named(_:)` turns it into the station's name
+    var start = ""      // the date the train left its origin, YYYYMMDD (what the 检票口 lookup needs)
+}
+
+/// The seats with each terminus telecode replaced by its name from the timetable's station list (12306's full list).
+func named(_ seats: [String: Seats], _ tt: Timetable) -> [String: Seats] {
+    seats.mapValues { s in
+        var s = s
+        if let i = tt.byCode[s.terminus] { s.terminus = tt.stations[i].name }
+        return s
+    }
+}
+
+/// 12306's 检票口 text, shorter, as the page shows it: "16检票口,17检票口" -> "16 / 17"; nil when nothing is left.
+func gateLabel(_ raw: String?) -> String? {
+    guard let raw else { return nil }
+    let parts = raw.split(whereSeparator: { $0 == "," || $0 == "，" }).map { p -> String in
+        var t = p.trimmingCharacters(in: .whitespaces)
+        if t.hasSuffix("进站检票口") { t.removeLast(5) } else if t.hasSuffix("检票口") { t.removeLast(3) }
+        if t.hasPrefix("检票口") { t.removeFirst(3) }
+        return t.trimmingCharacters(in: .whitespaces)
+    }.filter { !$0.isEmpty && !$0.allSatisfy { $0 == "-" } }
+    return parts.isEmpty ? nil : parts.joined(separator: " / ")
 }
 
 /// 12306's seat query, straight from the phone: the JSON endpoint its own search page uses
@@ -222,7 +245,7 @@ actor TwelveOhSix {
     private static let initURL = URL(string: "\(base)/otn/leftTicket/init")!
     private static let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
     // positions in a result row (undocumented; the community list used by 12306-mcp and every open-source client)
-    private enum F { static let trainId = 2, trainNo = 3, fromCode = 6, toCode = 7, canWebBuy = 11, tz = 25, wz = 26, ze = 30, zy = 31, swz = 32 }
+    private enum F { static let trainId = 2, trainNo = 3, terminusCode = 5, fromCode = 6, toCode = 7, canWebBuy = 11, startDate = 13, tz = 25, wz = 26, ze = 30, zy = 31, swz = 32 }
 
     private let http: URLSession = {
         let c = URLSessionConfiguration.ephemeral
@@ -241,6 +264,37 @@ actor TwelveOhSix {
         let t = Task { try await self.query(from: from, to: to, date: date) }
         cache[key] = t
         do { return try await t.value } catch { cache[key] = nil; throw error }
+    }
+
+    private var gateCache: [String: Task<[String: String], Error>] = [:]
+
+    /// 检票口 by station telecode for one train (its code and origin date YYYYMMDD), from the stops 12306's WeChat
+    /// mini-program shows (mobile.12306.cn, no login). 12306 fills it in for trains running today; stations without one
+    /// are left out. A failure is not cached, so a later look asks again.
+    func gates(code: String, start: String) async throws -> [String: String] {
+        let key = "\(code)|\(start)"
+        if let t = gateCache[key] { return try await t.value }
+        let t = Task { () -> [String: String] in
+            var r = URLRequest(url: URL(string: "https://mobile.12306.cn/wxxcx/wechat/main/travelServiceQrcodeTrainInfo")!)
+            r.httpMethod = "POST"
+            r.setValue(Self.ua, forHTTPHeaderField: "User-Agent")
+            r.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+            var form = URLComponents()
+            form.queryItems = [URLQueryItem(name: "trainCode", value: code), URLQueryItem(name: "startDay", value: start),
+                               URLQueryItem(name: "startTime", value: ""), URLQueryItem(name: "endDay", value: ""), URLQueryItem(name: "endTime", value: "")]
+            r.httpBody = form.percentEncodedQuery?.data(using: .utf8)
+            let (data, _) = try await self.http.data(for: r)
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let stops = ((json?["data"] as? [String: Any])?["trainDetail"] as? [String: Any])?["stopTime"] as? [[String: Any]] ?? []
+            var out: [String: String] = [:]
+            for s in stops {
+                let w = (s["wicket"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+                if let c = s["stationTelecode"] as? String, !w.isEmpty, !w.allSatisfy({ $0 == "-" }) { out[c] = w }
+            }
+            return out
+        }
+        gateCache[key] = t
+        do { return try await t.value } catch { gateCache[key] = nil; throw error }
     }
 
     private func get(_ url: URL, _ headers: [String: String] = [:]) async throws -> (Data, HTTPURLResponse) {
@@ -304,7 +358,8 @@ actor TwelveOhSix {
             func seat(_ i: Int) -> String { let v = f[i].trimmingCharacters(in: .whitespaces); return v.isEmpty ? "--" : v }
             // 商务座 falls back to 特等座 (older sets label the top class that way)
             out[f[F.trainId]] = Seats(sw: seat(F.swz) != "--" ? seat(F.swz) : seat(F.tz), yd: seat(F.zy), ed: seat(F.ze), wz: seat(F.wz),
-                                      canBuy: f[F.canWebBuy] == "Y", code: f[F.trainNo])
+                                      canBuy: f[F.canWebBuy] == "Y", code: f[F.trainNo],
+                                      terminus: f[F.terminusCode], start: f[F.startDate])
         }
         return out
     }
@@ -319,7 +374,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
 
 /// `-fixture`: made-up seats for every train the timetable runs between the two stations, the same answer each time
 /// (one train in eleven "does not run"), so the replica can draw identical states natively and in the HTML.
-func fixtureSeats(_ tt: Timetable, from: String, to: String) -> [String: Seats] {
+func fixtureSeats(_ tt: Timetable, from: String, to: String, date: String) -> [String: Seats] {
     guard let a = tt.byCode[from], let b = tt.byCode[to] else { return [:] }
     let counts = ["有", "无", "5", "12", "有", "无", "--", "有"]
     var out: [String: Seats] = [:]
@@ -329,7 +384,25 @@ func fixtureSeats(_ tt: Timetable, from: String, to: String) -> [String: Seats] 
         let h = t.no.unicodeScalars.reduce(7) { ($0 * 31 + Int($1.value)) % 1_000_003 }
         if h % 11 == 0 { continue }
         out[t.no] = Seats(sw: counts[h % 8], yd: counts[(h / 8) % 8], ed: counts[(h / 64) % 8], wz: h % 3 == 0 ? "--" : counts[(h / 512) % 8],
-                          canBuy: h % 13 != 0, code: t.code)
+                          canBuy: h % 13 != 0, code: t.code, terminus: tt.stations[t.stops[t.stops.count - 3]].code,
+                          start: date.replacingOccurrences(of: "-", with: ""))
+    }
+    return out
+}
+
+/// `-fixture`: made-up 检票口 for a train's stops, the same each time: some stations have none, some several.
+func fixtureGates(_ tt: Timetable, code: String) -> [String: String] {
+    guard let t = tt.trains.first(where: { $0.code == code }) else { return [:] }
+    var out: [String: String] = [:]
+    for p in 0..<(t.stops.count / 3) {
+        let st = tt.stations[t.stops[p * 3]].code
+        let h = (code + st).unicodeScalars.reduce(7) { ($0 * 31 + Int($1.value)) % 1_000_003 }
+        switch h % 4 {
+        case 0: continue
+        case 1: out[st] = "\(h % 20 + 1)检票口"
+        case 2: out[st] = "\(h % 12 + 1)A、\(h % 12 + 2)A,\(h % 12 + 1)B、\(h % 12 + 2)B"
+        default: out[st] = "检票口\(h % 9 + 1),检票口\(h % 9 + 2)"
+        }
     }
     return out
 }
@@ -338,7 +411,7 @@ func fixtureSeats(_ tt: Timetable, from: String, to: String) -> [String: Seats] 
 func apiJSON(_ seats: [String: Seats]) -> Data {
     let trains = seats.keys.sorted().map { k -> [String: Any] in
         let s = seats[k]!
-        return ["trainno": s.code, "train_no": k, "canBuy": s.canBuy, "numsw": s.sw, "numyd": s.yd, "numed": s.ed, "numwz": s.wz]
+        return ["trainno": s.code, "train_no": k, "terminus": s.terminus, "start": s.start, "canBuy": s.canBuy, "numsw": s.sw, "numyd": s.yd, "numed": s.ed, "numwz": s.wz]
     }
     return (try? JSONSerialization.data(withJSONObject: ["trains": trains])) ?? Data()
 }
