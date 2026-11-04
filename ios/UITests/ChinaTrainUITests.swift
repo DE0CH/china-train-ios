@@ -131,7 +131,7 @@ final class ChinaTrainUITests: XCTestCase {
         }
         // the route rows only (where the two can drift apart line by line); WebKit's span boxes are their line boxes
         // (not .train: WebKit's box there includes the badge's padding, the native line box does not)
-        let rowParts = ["span.stop-name", "span.stop-gate", "span.leg-to", "span.leg-dur", "span.stop-note", "span.walk-text"]
+        let rowParts = ["span.stop-name", "span.stop-gate", "span.leg-to", "span.leg-dur", "span.xfer-text"]
         let html = items(dumps["html"]).compactMap { i -> (String, Double)? in
             guard i.count > 3, let c = i[0] as? String, rowParts.contains(c), let t = i[1] as? String, let y = (i[3] as? NSNumber)?.doubleValue, !t.isEmpty
             else { return nil }

@@ -254,14 +254,17 @@ final class Screen: UIViewController, UITextFieldDelegate {
                     guard let n = nowMin, l.depart < n + salesClose else { continue }
                     if days[tk] == nil { days[tk] = .some(nil); dayQueue.append(("run|" + tk, date)) }
                 }
-                let gk = gateKey(s?.code ?? l.train, l, tt)
-                if gates[gk] == nil {
+                // where it leaves, and where it arrives (unless that is where it ends: 12306 has no 检票口 for a terminus)
+                let code = s?.code ?? l.train, start = String(tk.split(separator: "|")[1])
+                var ask = [gateKey(code, l.depart, l.from, tt)]
+                if let t = tt.trains.first(where: { $0.no == l.trainNo }), t.stops[t.stops.count - 3] != l.to { ask.append(gateKey(code, l.arrive, l.to, tt)) }
+                for gk in ask where gates[gk] == nil {
                     gates[gk] = .some(nil)
-                    dayQueue.append(("gate|" + gk + "|" + String(tk.split(separator: "|")[1]), date))
+                    dayQueue.append(("gate|" + gk + "|" + start, date))
                 }
             }
         }
-        while dayBusy < 3, !dayQueue.isEmpty {
+        while dayBusy < 6, !dayQueue.isEmpty {
             let (job, asked) = dayQueue.removeFirst()
             let p = job.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
             if asked != date {
@@ -296,9 +299,10 @@ final class Screen: UIViewController, UITextFieldDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in renderPending = false; renderResults() }
     }
 
-    /// "code|YYYY-MM-DD|telecode": a leg's train, the date it leaves its boarding station, and that station.
-    private func gateKey(_ code: String, _ l: Leg, _ tt: Timetable) -> String {
-        "\(code)|\(addDays(date, Int((Double(l.depart) / 1440).rounded(.down))))|\(tt.stations[l.from].code)"
+    /// "code|YYYY-MM-DD|telecode": a leg's train at a station of it at a time (minutes from the travel date's midnight).
+    /// At the end of a leg it is the arriving train's own 检票口 there, which tells you its platform.
+    private func gateKey(_ code: String, _ at: Int, _ station: Int, _ tt: Timetable) -> String {
+        "\(code)|\(addDays(date, Int((Double(at) / 1440).rounded(.down))))|\(tt.stations[station].code)"
     }
 
     // ---- the pickers ----
@@ -538,39 +542,32 @@ final class Screen: UIViewController, UITextFieldDelegate {
 
     private func row(_ tt: Timetable, _ r: Route) -> RouteRow {
         let st = { (i: Int) in tt.stations[i].name }
-        let info = r.legs.map { l -> (Leg, LegState?, String, String, (raw: String, label: String?)?, String?) in
+        typealias Gate = (raw: String, label: String?)
+        let info = r.legs.map { l -> (Leg, LegState?, String, String, (Gate?, Gate?), String?) in
             let s = legState(tt, l)
             let code = s?.seats?.code ?? l.train
             // 检票口: the station's researched short form of 12306's exact string, else the string itself
-            var gate: (raw: String, label: String?)?
-            if let s, s.error == nil, !s.missing, case .some(.some(let g)) = gates[gateKey(code, l, tt)], !g.isEmpty {
-                let station = tt.stations[l.from].code
-                gate = (g, Flags.fixture ? fixtureLabels[station]?[g] : GateLabels.label(g, at: station))
+            func gate(_ at: Int, _ st: Int) -> (raw: String, label: String?)? {
+                guard let s, s.error == nil, !s.missing, case .some(.some(let g)) = gates[gateKey(code, at, st, tt)], !g.isEmpty else { return nil }
+                let station = tt.stations[st].code
+                return (g, Flags.fixture ? fixtureLabels[station]?[g] : GateLabels.label(g, at: station))
             }
+            let gates2 = (gate(l.depart, l.from), gate(l.arrive, l.to))
             // 终到站 from 12306's seats, else the train's last stop in the timetable
             var terminus = s?.seats?.terminus
             if s?.departed == true || s?.closed == true, let t = tt.trains.first(where: { $0.no == l.trainNo }) { terminus = tt.stations[t.stops[t.stops.count - 3]].name }
-            return (l, s, code, trainClass(code), gate, terminus)
+            return (l, s, code, trainClass(code), gates2, terminus)
         }
+        // each train its own line, node to node; a transfer is the break between two lines (dashed where you change
+        // stations), with the wait in it
         var items: [RouteRow.Item] = []
         for (k, (l, s, code, cls, gate, terminus)) in info.enumerated() {
-            if k == 0 {
-                items.append(.init(kind: .stop(name: st(l.from), times: [(clock(l.depart), "开")], note: nil, gate: gate, inLine: nil, outLine: cls, xchg: false)))
-            } else {
-                let p = info[k - 1], wait = span(l.depart - p.0.arrive)
-                if p.0.to == l.from {
-                    items.append(.init(kind: .stop(name: st(l.from), times: [(clock(p.0.arrive), "到"), (clock(l.depart), "开")], note: "换乘，等候\(wait)", gate: gate,
-                                                   inLine: p.3, outLine: cls, xchg: true)))
-                } else {
-                    items.append(.init(kind: .stop(name: st(p.0.to), times: [(clock(p.0.arrive), "到")], note: nil, gate: nil, inLine: p.3, outLine: "W", xchg: true)))
-                    items.append(.init(kind: .walk(text: "\(st(p.0.to))出站，到\(st(l.from))换乘，等候\(wait)")))
-                    items.append(.init(kind: .stop(name: st(l.from), times: [(clock(l.depart), "开")], note: nil, gate: gate, inLine: "W", outLine: cls, xchg: true)))
-                }
-            }
+            let p = k > 0 ? info[k - 1] : nil
+            if let p { items.append(.init(kind: .xfer(text: span(l.depart - p.0.arrive), walk: p.0.to != l.from))) }
+            items.append(.init(kind: .stop(name: st(l.from), times: [(clock(l.depart), "")], note: nil, gate: gate.0,
+                                           inLine: nil, outLine: cls, xchg: false)))
             items.append(.init(kind: .leg(code: code, cls: cls, minutes: l.arrive - l.depart, terminus: terminus, state: s)))
-            if k == info.count - 1 {
-                items.append(.init(kind: .stop(name: st(l.to), times: [(clock(l.arrive), "到")], note: nil, gate: nil, inLine: cls, outLine: nil, xchg: false)))
-            }
+            items.append(.init(kind: .stop(name: st(l.to), times: [(clock(l.arrive), "")], note: nil, gate: gate.1, inLine: cls, outLine: nil, xchg: false)))
         }
         // one status for the whole route: every leg still to come needs at least one class on sale (one under way counts)
         func avail(_ s: LegState?) -> Bool {

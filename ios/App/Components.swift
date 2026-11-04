@@ -576,7 +576,7 @@ struct LegState {
 final class RouteRow: UIView {
     struct Item {
         enum Kind { case stop(name: String, times: [(String, String)], note: String?, gate: (raw: String, label: String?)?, inLine: String?, outLine: String?, xchg: Bool),
-                         leg(code: String, cls: String, minutes: Int, terminus: String?, state: LegState?), walk(text: String) }
+                         leg(code: String, cls: String, minutes: Int, terminus: String?, state: LegState?), xfer(text: String, walk: Bool) }
         let kind: Kind
     }
 
@@ -634,11 +634,12 @@ final class RouteRow: UIView {
         case .stop(let name, let times, let note, let gate, let inLine, let outLine, let xchg):
             track = [line(inLine), line(outLine), Border(.ink, UIEdgeInsets(top: 4, left: 4, bottom: 4, right: 4), fill: .panel)]
             if xchg { track.append(Box(.ink)) }
-            content.append(TextView(name, size: 16, weight: 700, lineHeight: 21.6))   // .stop-name 1rem/700, 1.35
+            if !name.isEmpty { content.append(TextView(name, size: 16, weight: 700, lineHeight: 21.6)) }   // .stop-name 1rem/700, 1.35
             for (t, k) in times {
                 // .stop-time 0.875rem muted, its time in <b> 1.125rem/600 Archivo with 3px after
                 let strut = Run(text: "", size: 14, color: .muted)
-                content.append(TextView([strut, Run(text: t, face: .num, size: 18, weight: 600, marginRight: 3), Run(text: k, size: 14, color: .muted)]))
+                content.append(TextView(k.isEmpty ? [strut, Run(text: t, face: .num, size: 18, weight: 600, marginRight: 3)]
+                                                  : [strut, Run(text: t, face: .num, size: 18, weight: 600, marginRight: 3), Run(text: k, size: 14, color: .muted)]))
             }
             if let note { content.append(TextView(note, size: 13, color: .muted)) }   // .stop-note 0.8125rem, its own line
             // .stop-gate 0.8125rem muted, its own line; the gate in <b> 600 ink
@@ -660,11 +661,12 @@ final class RouteRow: UIView {
             }
             content.append(TextView("\(className[cls] ?? "")，\(span(minutes))", size: 13, color: .muted))
             content.append(contentsOf: seatViews(state))
-        case .walk(let text):
-            let b = Border(.muted, UIEdgeInsets(top: 0, left: 3, bottom: 0, right: 0))
+        case .xfer(let text, let walk):
+            // .xfer: the line breaks; a change of station dashed (.xfer.walk .bar 3px dashed); the wait in the gap
+            let b = Border(walk ? .muted : .clear, UIEdgeInsets(top: 0, left: 3, bottom: 0, right: 0))
             b.dashed = true
             track = [b]
-            content = [TextView(text, size: 13, color: .muted)]
+            content = [TextView(text, .num, size: 18, weight: 700)]   // .xfer-text 1.125rem/700 Archivo, ink: the wait is a key figure
         }
         (track + content).forEach(addSubview)
         rows.append((track, content, kind))
@@ -815,12 +817,12 @@ final class RouteRow: UIView {
                 }
                 h = max(56, 4 + hh + 6 + sh + 10)
                 row.track[0].frame = CGRect(x: tx + 11, y: y, width: 6, height: h)
-            case .walk:
-                // .walk-text: padding 8px 0 8px 12px; the bar 3px dashed, centred in the track
+            case .xfer:
+                // .xfer: min-height 36px; .xfer-text padding-left 12px, centred (align-self); the bar centred in the track
                 let t = row.content[0] as! TextView
                 let th = t.wrap(cw - 12)
-                t.frame = CGRect(x: cx + 12, y: y + 8, width: cw - 12, height: th)
-                h = max(56, th + 16)
+                h = max(36, th)
+                t.frame = CGRect(x: cx + 12, y: y + (h - th) / 2, width: cw - 12, height: th)
                 row.track[0].frame = CGRect(x: tx + 12.5, y: y, width: 3, height: h)
             }
             y += h

@@ -25,7 +25,7 @@ enum GeometryProbe {
       if (!document.querySelector('.status:not(.s-checking)')) return;
       clearInterval(t);
       setTimeout(() => {
-        const sel = 'h1,.sub,.sign label,.swap-label,.day span,.day b,.preset,.status-text b,.status-text span,.refresh,.seg button,.count,.legend li,.when .t,.when .dur,.verdict,.stop-name,.stop-time b,.stop-time span,.stop-note,.train,.leg-dur,.seat span,.seat b,.walk-text,.sign input,.stop-gate,.leg-to';
+        const sel = 'h1,.sub,.sign label,.swap-label,.day span,.day b,.preset,.status-text b,.status-text span,.refresh,.seg button,.count,.legend li,.when .t,.when .dur,.verdict,.stop-name,.stop-time b,.stop-time span,.train,.leg-dur,.seat span,.seat b,.xfer-text,.sign input,.stop-gate,.leg-to';
         const items = [];
         document.querySelectorAll(sel).forEach((e, i) => {
           if (i > 400) return;
