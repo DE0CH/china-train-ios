@@ -260,6 +260,12 @@ let className = ["G": "高铁", "D": "动车", "C": "城际", "P": "普速"]
 
 // ---- seats ------------------------------------------------------------------------------------------------------
 
+/// One train's run on one day: whether it runs (nil: 12306 could not be asked) and 检票口 by station telecode.
+struct TrainDay: Equatable {
+    var runs: Bool?
+    var gates: [String: String]
+}
+
 struct Seats: Equatable {
     var sw, yd, ed, wz: String
     var canBuy: Bool
@@ -319,15 +325,15 @@ actor TwelveOhSix {
         do { return try await t.value } catch { cache[key] = nil; throw error }
     }
 
-    private var gateCache: [String: Task<[String: String], Error>] = [:]
+    private var gateCache: [String: Task<TrainDay, Error>] = [:]
 
-    /// 检票口 by station telecode for one train (its code and origin date YYYYMMDD), from the stops 12306's WeChat
-    /// mini-program shows (mobile.12306.cn, no login). 12306 fills it in for trains running today; stations without one
-    /// are left out. A failure is not cached, so a later look asks again.
-    func gates(code: String, start: String) async throws -> [String: String] {
+    /// One train's run on one day (its code and origin date YYYYMMDD), from the stops 12306's WeChat mini-program shows
+    /// (mobile.12306.cn, no login): whether it runs (12306 lists stops), and 检票口 by station telecode (filled in for
+    /// trains running today; stations without one are left out). A failure is not cached, so a later look asks again.
+    func trainDay(code: String, start: String) async throws -> TrainDay {
         let key = "\(code)|\(start)"
         if let t = gateCache[key] { return try await t.value }
-        let t = Task { () -> [String: String] in
+        let t = Task { () -> TrainDay in
             var r = URLRequest(url: URL(string: "https://mobile.12306.cn/wxxcx/wechat/main/travelServiceQrcodeTrainInfo")!)
             r.httpMethod = "POST"
             r.setValue(Self.ua, forHTTPHeaderField: "User-Agent")
@@ -337,14 +343,16 @@ actor TwelveOhSix {
                                URLQueryItem(name: "startTime", value: ""), URLQueryItem(name: "endDay", value: ""), URLQueryItem(name: "endTime", value: "")]
             r.httpBody = form.percentEncodedQuery?.data(using: .utf8)
             let (data, _) = try await self.http.data(for: r)
-            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            let stops = ((json?["data"] as? [String: Any])?["trainDetail"] as? [String: Any])?["stopTime"] as? [[String: Any]] ?? []
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any], json["data"] != nil else {
+                throw PlanError.message("12306 没有回应")
+            }
+            let stops = ((json["data"] as? [String: Any])?["trainDetail"] as? [String: Any])?["stopTime"] as? [[String: Any]] ?? []
             var out: [String: String] = [:]
             for s in stops {
                 let w = (s["wicket"] as? String ?? "").trimmingCharacters(in: .whitespaces)
                 if let c = s["stationTelecode"] as? String, !w.isEmpty, !w.allSatisfy({ $0 == "-" }) { out[c] = w }
             }
-            return out
+            return TrainDay(runs: !stops.isEmpty, gates: out)
         }
         gateCache[key] = t
         do { return try await t.value } catch { gateCache[key] = nil; throw error }

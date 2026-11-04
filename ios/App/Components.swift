@@ -572,6 +572,8 @@ struct LegState {
     var seats: Seats?
     var missing = false
     var error: String?
+    var departed = false   // today's train that left: 已发车
+    var closed = false     // today's train that stopped selling but has not left: 停止售票
 }
 
 final class RouteRow: UIView {
@@ -597,8 +599,8 @@ final class RouteRow: UIView {
         let dur = TextView(span(arrive - depart), .num, size: 15, weight: 600)
         for v in [t1, t2, dur] { whenItems.append((v as UIView, v.naturalWidth, v.height, v.firstBaseline)) }
         // .verdict: inline-flex, centre, gap 6px, 0.9375rem/700 (500 muted unless on sale or failed); a 12px pip first
-        let label = ["pending": "查询中", "error": "查询失败", "ok": "有票", "none": "无票"][status] ?? ""
-        let quiet = status == "none" || status == "pending"
+        let label = ["pending": "查询中", "error": "查询失败", "ok": "有票", "none": "无票", "gone": "已发车"][status] ?? ""
+        let quiet = status == "none" || status == "pending" || status == "gone"
         let vt = TextView(label, .num, size: 15, weight: quiet ? 500 : 700, color: quiet ? .muted : .ink)
         let v = UIView()
         v.addSubview(vt)
@@ -606,7 +608,7 @@ final class RouteRow: UIView {
         v.accessibilityLabel = label
         v.accessibilityIdentifier = "status-\(status)"
         let vh = vt.height
-        if status != "pending" {
+        if status != "pending" && status != "gone" {
             let pip = Border(status == "none" ? .muted : .ink, UIEdgeInsets(top: 2, left: 2, bottom: 2, right: 2), fill: status == "ok" ? .ink : nil)
             pip.dashed = status == "error"
             pip.frame = CGRect(x: 0, y: (vh - 12) / 2, width: 12, height: 12)
@@ -670,6 +672,7 @@ final class RouteRow: UIView {
     /// .seats: plates "label | count", the count filled with ink when on sale; or one line of state.
     private func seatViews(_ s: LegState?) -> [UIView] {
         guard let s else { return [TextView("正在查询余票", size: 14, color: .muted)] }
+        if s.departed || s.closed { return [TextView(s.departed ? "已发车" : "停止售票", size: 14, color: .muted)] }   // .seats.pending
         if s.error != nil || s.missing {
             let v = UIView()
             let x = IconView(Icon.cross, size: 16)

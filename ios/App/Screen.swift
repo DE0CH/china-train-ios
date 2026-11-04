@@ -61,9 +61,9 @@ final class Screen: UIViewController, UITextFieldDelegate {
     private var filter = "all"
     private var routes: [Route]?
     private var legs: [String: Result<[String: Seats], Error>] = [:]
-    private var gates: [String: [String: String]] = [:]   // "code|start" → 检票口 by station telecode
-    private var gateQueue: [(key: String, code: String, start: String, date: String)] = []
-    private var gateBusy = 0
+    private var days: [String: TrainDay?] = [:]   // "code|YYYYMMDD" → the train's run that day (nil inside: asking)
+    private var dayQueue: [(key: String, date: String)] = []
+    private var dayBusy = 0
     private var total = 0
     private var checkedAt: Date?
     private var now = Flags.now()
@@ -198,7 +198,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
                     do { v = .success(try await seats(tt, p[0], p[1], p[2], fresh: fresh)) } catch { v = .failure(error) }
                     if run != id { return }
                     legs[k] = v
-                    askGates()
+                    askDays()
                     q.done += 1
                     if q.done == keys.count { checkedAt = Flags.now(); now = Flags.now() }
                     renderResults()
@@ -217,32 +217,57 @@ final class Screen: UIViewController, UITextFieldDelegate {
         return named(try await TwelveOhSix.shared.seats(from: a, to: b, date: d, fresh: fresh), tt)
     }
 
-    /// 检票口 for every leg boarding today or tomorrow (12306 has none further ahead), once its seats name the train;
-    /// three lookups at a time, and one still waiting when the date changes is dropped. Not part of the search's
-    /// checking/committed state: a row gains its 检票口 line when it arrives, or never when 12306 has none.
-    private func askGates() {
+    /// Minutes since the travel date's midnight when it is today, else nil: today, trains that left are kept while their
+    /// route is under way.
+    private var nowMinutes: Int? {
+        guard date == isoFormatter().string(from: now) else { return nil }
+        let c = Calendar.current.dateComponents([.hour, .minute], from: now)
+        return c.hour! * 60 + c.minute!
+    }
+    private let salesClose = 60   // minutes before departure within which a train missing from the seats is checked
+
+    /// "code|YYYYMMDD" of the day a leg's train left its origin: from 12306's seats when there, else the timetable.
+    private func trainKey(_ tt: Timetable, _ l: Leg, _ s: Seats?) -> String {
+        if let s, !s.start.isEmpty { return "\(s.code)|\(s.start)" }
+        var dep = 0
+        if let t = tt.trains.first(where: { $0.no == l.trainNo }) {
+            for p in 0..<(t.stops.count / 3) where t.stops[p * 3] == l.from { dep = t.stops[p * 3 + 2]; break }
+        }
+        let day = addDays(date, Int((Double(l.depart) / 1440).rounded(.down)) - Int((Double(dep) / 1440).rounded(.down)))
+        return "\(l.train)|\(day.replacingOccurrences(of: "-", with: ""))"
+    }
+
+    /// Each train's run, from 12306's list of its stops: for 检票口 on legs boarding today or tomorrow (12306 has none
+    /// further ahead), and to tell a train of today that stopped selling from one that does not run. Three lookups at a
+    /// time; one still waiting when the date changes is dropped.
+    private func askDays() {
         guard let tt, let routes else { return }
-        let last = addDays(isoFormatter().string(from: Flags.now()), 1)
-        for r in routes {
-            for l in r.legs where addDays(date, Int((Double(l.depart) / 1440).rounded(.down))) <= last {
-                guard case .success(let m) = legs[legKey(tt, l)], let s = m[l.trainNo], !s.start.isEmpty else { continue }
-                let k = "\(s.code)|\(s.start)"
-                guard gates[k] == nil else { continue }
-                gates[k] = [:]
-                gateQueue.append((k, s.code, s.start, date))
+        let last = addDays(isoFormatter().string(from: Flags.now()), 1), nowMin = nowMinutes
+        for r in routes where nowMin == nil || r.arrive > nowMin! {
+            for l in r.legs {
+                guard case .success(let m) = legs[legKey(tt, l)] else { continue }
+                let s = m[l.trainNo]
+                let wanted = s != nil ? addDays(date, Int((Double(l.depart) / 1440).rounded(.down))) <= last : nowMin != nil && l.depart < nowMin! + salesClose
+                guard wanted else { continue }
+                let k = trainKey(tt, l, s)
+                guard days[k] == nil else { continue }
+                days[k] = .some(nil)
+                dayQueue.append((k, date))
             }
         }
-        while gateBusy < 3, !gateQueue.isEmpty {
-            let (k, code, start, asked) = gateQueue.removeFirst()
-            if asked != date { gates[k] = nil; continue }
-            gateBusy += 1
+        while dayBusy < 3, !dayQueue.isEmpty {
+            let (k, asked) = dayQueue.removeFirst()
+            if asked != date { days[k] = nil; continue }
+            dayBusy += 1
+            let p = k.split(separator: "|").map(String.init)
             Task { @MainActor in
-                var g: [String: String] = [:]
-                if Flags.fixture { try? await Task.sleep(nanoseconds: 50_000_000); g = fixtureGates(tt, code: code) }
-                else { g = (try? await TwelveOhSix.shared.gates(code: code, start: start)) ?? [:] }
-                gateBusy -= 1
-                if !g.isEmpty { gates[k] = g; renderResults() }
-                askGates()
+                var d: TrainDay
+                if Flags.fixture { try? await Task.sleep(nanoseconds: 50_000_000); d = TrainDay(runs: true, gates: fixtureGates(tt, code: p[0])) }
+                else { d = (try? await TwelveOhSix.shared.trainDay(code: p[0], start: p[1])) ?? TrainDay(runs: nil, gates: [:]) }
+                dayBusy -= 1
+                days[k] = .some(d)
+                renderResults()
+                askDays()
             }
         }
     }
@@ -372,21 +397,24 @@ final class Screen: UIViewController, UITextFieldDelegate {
         renderResults()
     }
 
+    /// A route is hidden once 12306 says one of its trains does not run that day, or (today) once it has arrived.
     private func runs(_ r: Route) -> Bool {
         guard let tt else { return true }
-        return r.legs.allSatisfy { l in
-            switch legs[legKey(tt, l)] {
-            case .none, .failure: return true
-            case .success(let m): return m[l.trainNo] != nil
-            }
-        }
+        if let n = nowMinutes, r.arrive <= n { return false }
+        return r.legs.allSatisfy { legState(tt, $0)?.missing != true }
     }
 
+    /// What a leg shows: seats, 当日不开行, or for today's train that stopped selling, 已发车 / 停止售票 once its run is known.
     private func legState(_ tt: Timetable, _ l: Leg) -> LegState? {
         switch legs[legKey(tt, l)] {
         case .none: return nil
         case .failure(let e): return LegState(error: "\(e)")
-        case .success(let m): return m[l.trainNo].map { LegState(seats: $0) } ?? LegState(missing: true)
+        case .success(let m):
+            if let s = m[l.trainNo] { return LegState(seats: s) }
+            guard let n = nowMinutes, l.depart < n + salesClose else { return LegState(missing: true) }
+            guard case .some(.some(let d)) = days[trainKey(tt, l, nil)] else { return nil }   // still asking
+            if d.runs == false { return LegState(missing: true) }
+            return l.depart <= n ? LegState(departed: true) : LegState(closed: true)
         }
     }
 
@@ -479,14 +507,18 @@ final class Screen: UIViewController, UITextFieldDelegate {
 
     private func row(_ tt: Timetable, _ r: Route) -> RouteRow {
         let st = { (i: Int) in tt.stations[i].name }
-        let info = r.legs.map { l -> (Leg, LegState?, String, String, String?) in
+        let info = r.legs.map { l -> (Leg, LegState?, String, String, String?, String?) in
             let s = legState(tt, l)
             let code = s?.seats?.code ?? l.train
-            let gate = s?.seats.flatMap { gateLabel(gates["\($0.code)|\($0.start)"]?[tt.stations[l.from].code]) }
-            return (l, s, code, trainClass(code), gate)
+            var gate: String?
+            if let s, s.error == nil, !s.missing, case .some(.some(let d)) = days[trainKey(tt, l, s.seats)] { gate = gateLabel(d.gates[tt.stations[l.from].code]) }
+            // 终到站 from 12306's seats, else the train's last stop in the timetable
+            var terminus = s?.seats?.terminus
+            if s?.departed == true || s?.closed == true, let t = tt.trains.first(where: { $0.no == l.trainNo }) { terminus = tt.stations[t.stops[t.stops.count - 3]].name }
+            return (l, s, code, trainClass(code), gate, terminus)
         }
         var items: [RouteRow.Item] = []
-        for (k, (l, s, code, cls, gate)) in info.enumerated() {
+        for (k, (l, s, code, cls, gate, terminus)) in info.enumerated() {
             if k == 0 {
                 items.append(.init(kind: .stop(name: st(l.from), times: [(clock(l.depart), "开")], note: nil, gate: gate, inLine: nil, outLine: cls, xchg: false)))
             } else {
@@ -500,14 +532,19 @@ final class Screen: UIViewController, UITextFieldDelegate {
                     items.append(.init(kind: .stop(name: st(l.from), times: [(clock(l.depart), "开")], note: nil, gate: gate, inLine: "W", outLine: cls, xchg: true)))
                 }
             }
-            items.append(.init(kind: .leg(code: code, cls: cls, minutes: l.arrive - l.depart, terminus: s?.seats?.terminus, state: s)))
+            items.append(.init(kind: .leg(code: code, cls: cls, minutes: l.arrive - l.depart, terminus: terminus, state: s)))
             if k == info.count - 1 {
                 items.append(.init(kind: .stop(name: st(l.to), times: [(clock(l.arrive), "到")], note: nil, gate: nil, inLine: cls, outLine: nil, xchg: false)))
             }
         }
-        // one status for the whole route: every leg needs at least one class on sale
-        func avail(_ x: Seats?) -> Bool { guard let x, x.canBuy else { return false }; return [x.sw, x.yd, x.ed, x.wz].contains { $0 == "有" || Int($0) != nil } }
-        let status = info.contains { $0.1 == nil } ? "pending" : info.contains { $0.1?.error != nil } ? "error" : info.allSatisfy { avail($0.1?.seats) } ? "ok" : "none"
+        // one status for the whole route: every leg still to come needs at least one class on sale (one under way counts)
+        func avail(_ s: LegState?) -> Bool {
+            if s?.departed == true { return true }
+            guard let x = s?.seats, x.canBuy else { return false }
+            return [x.sw, x.yd, x.ed, x.wz].contains { $0 == "有" || Int($0) != nil }
+        }
+        let status = info.contains { $0.1 == nil } ? "pending" : info.contains { $0.1?.error != nil } ? "error"
+            : info.allSatisfy { $0.1?.departed == true } ? "gone" : info.allSatisfy { avail($0.1) } ? "ok" : "none"
         return RouteRow(depart: r.depart, arrive: r.arrive, status: status, items: items)
     }
 

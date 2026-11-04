@@ -100,8 +100,9 @@ final class SiteScheme: NSObject, WKURLSchemeHandler {
             let q = Dictionary(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.map { ($0.name, $0.value ?? "") } ?? [],
                                uniquingKeysWith: { a, _ in a })
             let (code, start) = (q["train"] ?? "", q["start"] ?? "")
-            let gates = Flags.fixture ? fixtureGates(try await table().1, code: code) : try await TwelveOhSix.shared.gates(code: code, start: start)
-            return ((try? JSONSerialization.data(withJSONObject: ["gates": gates])) ?? Data(), "application/json")
+            let day = Flags.fixture ? TrainDay(runs: true, gates: fixtureGates(try await table().1, code: code))
+                : try await TwelveOhSix.shared.trainDay(code: code, start: start)
+            return ((try? JSONSerialization.data(withJSONObject: ["runs": day.runs ?? true, "gates": day.gates])) ?? Data(), "application/json")
         default:
             let path = url.path == "/" || url.path.isEmpty ? "/index.html" : url.path
             guard let site = Bundle.main.url(forResource: "Site", withExtension: nil),
