@@ -27,7 +27,7 @@ class Tap: UIControl {
 // ---- header: `.top` ---------------------------------------------------------------------------------------------
 
 final class Header: UIView {
-    let title = TextView("火车路线规划", size: 24, weight: 800, lineHeight: 28.8)   // h1 1.75rem/800, line-height 1.2
+    let title = TextView("火车路线规划", size: 24, weight: 800, lineHeight: 28.8)   // h1 1.5rem/800, line-height 1.2
     let sub = TextView("", size: 13, color: .muted)                                  // .sub 0.875rem
     init() {
         super.init(frame: .zero)
@@ -99,13 +99,14 @@ final class StationSign: UIView {
     /// Phone grid: a 44px track column and the text column after an 8px gap; padding 12px 16px 12px 0.
     func layout(_ w: CGFloat) -> CGFloat {
         let top: CGFloat = 12, x: CGFloat = 52, tw = max(0, w - x - 16)
-        label.frame = CGRect(x: x, y: top, width: tw, height: 21)
+        let lh = label.height   // .sign label: 13px, line-height 1.5 (19)
+        label.frame = CGRect(x: x, y: top, width: tw, height: lh)
         // input: padding 2px 0, border-bottom 3px; WebKit gives its text at least the font's own height (ascent +
         // descent, rounded up: 45px), not the 36px of line-height 1.15
         let (a, d) = Fonts.metrics(Fonts.font(.text, 32, 800)), fh = max(36, a + d)
-        field.frame = CGRect(x: x, y: top + 21 + 2, width: tw, height: fh)
-        underline.frame = CGRect(x: x, y: top + 21 + 2 + fh + 2, width: tw, height: 3)
-        let inner = 21 + fh + 7, h = inner + 24   // the label and the input (no pinyin line)
+        field.frame = CGRect(x: x, y: top + lh + 2, width: tw, height: fh)
+        underline.frame = CGRect(x: x, y: top + lh + 2 + fh + 2, width: tw, height: 3)
+        let inner = lh + fh + 7, h = inner + 24   // the label and the input (no pinyin line)
         let cy = top + inner / 2
         node.frame = CGRect(x: 13, y: cy - 9, width: 18, height: 18)
         // the line runs from the node to the next part: left calc(50% - 3px), 6px, 12px past the track
