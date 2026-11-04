@@ -62,7 +62,8 @@ final class Screen: UIViewController, UITextFieldDelegate {
     private var routes: [Route]?
     private var legs: [String: Result<[String: Seats], Error>] = [:]
     private var days: [String: TrainDay?] = [:]   // "code|YYYYMMDD" → the train's run that day (nil inside: asking)
-    private var dayQueue: [(key: String, date: String)] = []
+    private var gates: [String: String?] = [:]    // "code|YYYY-MM-DD|telecode" → 检票口 as 12306 writes it ("" none)
+    private var dayQueue: [(job: String, date: String)] = []
     private var dayBusy = 0
     private var total = 0
     private var checkedAt: Date?
@@ -137,6 +138,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
     // ---- the timetable ----
 
     private func load() {
+        if !Flags.fixture { Task { await GateLabels.refresh(); renderResults() } }   // the 检票口 short forms, refreshed daily
         if let data = TimetableStore.cached(), let t = try? Timetable(json: data) {
             loaded(t)
             if TimetableStore.stale { Task { if let d = try? await TimetableStore.download(), let t = try? Timetable(json: d) { loaded(t) } } }
@@ -237,39 +239,57 @@ final class Screen: UIViewController, UITextFieldDelegate {
         return "\(l.train)|\(day.replacingOccurrences(of: "-", with: ""))"
     }
 
-    /// Each train's run, from 12306's list of its stops: for 检票口 on legs boarding today or tomorrow (12306 has none
-    /// further ahead), and to tell a train of today that stopped selling from one that does not run. Three lookups at a
+    /// For today's trains missing from the seat answer that left or stop selling within the hour: whether they run (12306
+    /// lists their stops); and every shown leg's 检票口 (12306's own 检票口 query, known days ahead). Three lookups at a
     /// time; one still waiting when the date changes is dropped.
     private func askDays() {
         guard let tt, let routes else { return }
-        let last = addDays(isoFormatter().string(from: Flags.now()), 1), nowMin = nowMinutes
+        let nowMin = nowMinutes
         for r in routes where nowMin == nil || r.arrive > nowMin! {
             for l in r.legs {
                 guard case .success(let m) = legs[legKey(tt, l)] else { continue }
                 let s = m[l.trainNo]
-                let wanted = s != nil ? addDays(date, Int((Double(l.depart) / 1440).rounded(.down))) <= last : nowMin != nil && l.depart < nowMin! + salesClose
-                guard wanted else { continue }
-                let k = trainKey(tt, l, s)
-                guard days[k] == nil else { continue }
-                days[k] = .some(nil)
-                dayQueue.append((k, date))
+                let tk = trainKey(tt, l, s)
+                if s == nil {
+                    guard let n = nowMin, l.depart < n + salesClose else { continue }
+                    if days[tk] == nil { days[tk] = .some(nil); dayQueue.append(("run|" + tk, date)) }
+                }
+                let gk = gateKey(s?.code ?? l.train, l, tt)
+                if gates[gk] == nil {
+                    gates[gk] = .some(nil)
+                    dayQueue.append(("gate|" + gk + "|" + String(tk.split(separator: "|")[1]), date))
+                }
             }
         }
         while dayBusy < 3, !dayQueue.isEmpty {
-            let (k, asked) = dayQueue.removeFirst()
-            if asked != date { days[k] = nil; continue }
+            let (job, asked) = dayQueue.removeFirst()
+            let p = job.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+            if asked != date {
+                if p[0] == "run" { days[p[1] + "|" + p[2]] = nil } else { gates[p[1...3].joined(separator: "|")] = nil }
+                continue
+            }
             dayBusy += 1
-            let p = k.split(separator: "|").map(String.init)
             Task { @MainActor in
-                var d: TrainDay
-                if Flags.fixture { try? await Task.sleep(nanoseconds: 50_000_000); d = TrainDay(runs: true, gates: fixtureGates(tt, code: p[0])) }
-                else { d = (try? await TwelveOhSix.shared.trainDay(code: p[0], start: p[1])) ?? TrainDay(runs: nil, gates: [:]) }
+                if p[0] == "run" {
+                    var r: Bool? = true
+                    if !Flags.fixture { r = try? await TwelveOhSix.shared.runs(code: p[1], start: p[2]) }
+                    days[p[1] + "|" + p[2]] = .some(TrainDay(runs: r))
+                } else {
+                    var g = ""
+                    if Flags.fixture { try? await Task.sleep(nanoseconds: 50_000_000); g = fixtureGate(code: p[1], station: p[3]) }
+                    else { g = (try? await TwelveOhSix.shared.gate(code: p[1], date: p[2], station: p[3], start: p[4])) ?? "" }   // a failure: none
+                    gates[p[1...3].joined(separator: "|")] = .some(g)
+                }
                 dayBusy -= 1
-                days[k] = .some(d)
                 renderResults()
                 askDays()
             }
         }
+    }
+
+    /// "code|YYYY-MM-DD|telecode": a leg's train, the date it leaves its boarding station, and that station.
+    private func gateKey(_ code: String, _ l: Leg, _ tt: Timetable) -> String {
+        "\(code)|\(addDays(date, Int((Double(l.depart) / 1440).rounded(.down))))|\(tt.stations[l.from].code)"
     }
 
     // ---- the pickers ----
@@ -507,11 +527,15 @@ final class Screen: UIViewController, UITextFieldDelegate {
 
     private func row(_ tt: Timetable, _ r: Route) -> RouteRow {
         let st = { (i: Int) in tt.stations[i].name }
-        let info = r.legs.map { l -> (Leg, LegState?, String, String, String?, String?) in
+        let info = r.legs.map { l -> (Leg, LegState?, String, String, (raw: String, label: String?)?, String?) in
             let s = legState(tt, l)
             let code = s?.seats?.code ?? l.train
-            var gate: String?
-            if let s, s.error == nil, !s.missing, case .some(.some(let d)) = days[trainKey(tt, l, s.seats)] { gate = gateLabel(d.gates[tt.stations[l.from].code]) }
+            // 检票口: the station's researched short form of 12306's exact string, else the string itself
+            var gate: (raw: String, label: String?)?
+            if let s, s.error == nil, !s.missing, case .some(.some(let g)) = gates[gateKey(code, l, tt)], !g.isEmpty {
+                let station = tt.stations[l.from].code
+                gate = (g, Flags.fixture ? fixtureLabels[station]?[g] : GateLabels.label(g, at: station))
+            }
             // 终到站 from 12306's seats, else the train's last stop in the timetable
             var terminus = s?.seats?.terminus
             if s?.departed == true || s?.closed == true, let t = tt.trains.first(where: { $0.no == l.trainNo }) { terminus = tt.stations[t.stops[t.stops.count - 3]].name }

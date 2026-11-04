@@ -96,13 +96,25 @@ final class SiteScheme: NSObject, WKURLSchemeHandler {
             }
             let seats = try await TwelveOhSix.shared.seats(from: from, to: to, date: date)
             return (apiJSON(named(seats, try await table().1)), "application/json")
-        case "/api/gates":
+        case "/api/runs", "/api/gate":
             let q = Dictionary(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.map { ($0.name, $0.value ?? "") } ?? [],
                                uniquingKeysWith: { a, _ in a })
             let (code, start) = (q["train"] ?? "", q["start"] ?? "")
-            let day = Flags.fixture ? TrainDay(runs: true, gates: fixtureGates(try await table().1, code: code))
-                : try await TwelveOhSix.shared.trainDay(code: code, start: start)
-            return ((try? JSONSerialization.data(withJSONObject: ["runs": day.runs ?? true, "gates": day.gates])) ?? Data(), "application/json")
+            let body: [String: Any]
+            if url.path == "/api/runs" {
+                var runs = true
+                if !Flags.fixture { runs = try await TwelveOhSix.shared.runs(code: code, start: start) }
+                body = ["runs": runs]
+            } else {
+                let (date, station) = (q["date"] ?? "", q["station"] ?? "")
+                var gate: String
+                if Flags.fixture { try await Task.sleep(nanoseconds: 50_000_000); gate = fixtureGate(code: code, station: station) }
+                else { gate = try await TwelveOhSix.shared.gate(code: code, date: date, station: station, start: start) }
+                body = ["gate": gate]
+            }
+            return ((try? JSONSerialization.data(withJSONObject: body)) ?? Data(), "application/json")
+        case "/gate-labels.json":
+            return ((try? JSONSerialization.data(withJSONObject: Flags.fixture ? fixtureLabels : GateLabels.table)) ?? Data(), "application/json")
         default:
             let path = url.path == "/" || url.path.isEmpty ? "/index.html" : url.path
             guard let site = Bundle.main.url(forResource: "Site", withExtension: nil),

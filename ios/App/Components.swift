@@ -578,7 +578,7 @@ struct LegState {
 
 final class RouteRow: UIView {
     struct Item {
-        enum Kind { case stop(name: String, times: [(String, String)], note: String?, gate: String?, inLine: String?, outLine: String?, xchg: Bool),
+        enum Kind { case stop(name: String, times: [(String, String)], note: String?, gate: (raw: String, label: String?)?, inLine: String?, outLine: String?, xchg: Bool),
                          leg(code: String, cls: String, minutes: Int, terminus: String?, state: LegState?), walk(text: String) }
         let kind: Kind
     }
@@ -645,7 +645,11 @@ final class RouteRow: UIView {
             }
             if let note { content.append(TextView(note, size: 13, color: .muted)) }   // .stop-note 0.8125rem, its own line
             // .stop-gate 0.8125rem muted, its own line; the gate in <b> 600 ink
-            if let gate { content.append(TextView([Run(text: "检票口 ", size: 13, color: .muted), Run(text: gate, size: 13, weight: 600)])) }
+            // with a researched short form: "检票口 <b>10/11</b>"; else 12306's own words in <b>
+            if let gate {
+                content.append(TextView(gate.label.map { [Run(text: "检票口 ", size: 13, color: .muted), Run(text: $0, size: 13, weight: 600)] }
+                                        ?? [Run(text: gate.raw, size: 13, weight: 600)]))
+            }
         case .leg(let code, let cls, let minutes, let terminus, let state):
             track = [Box(.line(cls))]
             let badge = Box(.line(cls))

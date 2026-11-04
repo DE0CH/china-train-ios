@@ -260,10 +260,9 @@ let className = ["G": "高铁", "D": "动车", "C": "城际", "P": "普速"]
 
 // ---- seats ------------------------------------------------------------------------------------------------------
 
-/// One train's run on one day: whether it runs (nil: 12306 could not be asked) and 检票口 by station telecode.
+/// Whether a train runs on one day (nil: 12306 could not be asked).
 struct TrainDay: Equatable {
     var runs: Bool?
-    var gates: [String: String]
 }
 
 struct Seats: Equatable {
@@ -283,16 +282,33 @@ func named(_ seats: [String: Seats], _ tt: Timetable) -> [String: Seats] {
     }
 }
 
-/// 12306's 检票口 text, shorter, as the page shows it: "16检票口,17检票口" -> "16 / 17"; nil when nothing is left.
-func gateLabel(_ raw: String?) -> String? {
-    guard let raw else { return nil }
-    let parts = raw.split(whereSeparator: { $0 == "," || $0 == "，" }).map { p -> String in
-        var t = p.trimmingCharacters(in: .whitespaces)
-        if t.hasSuffix("进站检票口") { t.removeLast(5) } else if t.hasSuffix("检票口") { t.removeLast(3) }
-        if t.hasPrefix("检票口") { t.removeFirst(3) }
-        return t.trimmingCharacters(in: .whitespaces)
-    }.filter { !$0.isEmpty && !$0.allSatisfy { $0 == "-" } }
-    return parts.isEmpty ? nil : parts.joined(separator: " / ")
+/// The short form of each station's 检票口 strings ("检票口10A、11A,10B、11B" -> "10/11"), researched in advance per
+/// station from 12306's own strings: train.deyaochen.com/gate-labels.json, cached like the timetable. Exact strings
+/// only: one not in it is shown as 12306 writes it.
+enum GateLabels {
+    static let url = URL(string: "https://train.deyaochen.com/gate-labels.json")!
+    static var file: URL { TimetableStore.file.deletingLastPathComponent().appendingPathComponent("gate-labels.json") }
+    static var table: [String: [String: String]] = load(try? Data(contentsOf: file))
+
+    static func load(_ data: Data?) -> [String: [String: String]] {
+        guard let data, let t = try? JSONSerialization.jsonObject(with: data) as? [String: [String: String]] else { return [:] }
+        return t
+    }
+
+    /// The cached table at once; a new one when it is over a day old.
+    @MainActor static func refresh() async {
+        if let at = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date,
+           Date().timeIntervalSince(at) < 86400 { return }
+        var r = URLRequest(url: url)
+        r.cachePolicy = .reloadIgnoringLocalCacheData
+        guard let res = try? await URLSession.shared.data(for: r), (res.1 as? HTTPURLResponse)?.statusCode == 200 else { return }
+        let data = res.0
+        guard !load(data).isEmpty || String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "{}" else { return }
+        try? data.write(to: file, options: .atomic)
+        table = load(data)
+    }
+
+    static func label(_ raw: String, at station: String) -> String? { table[station]?[raw] }
 }
 
 /// 12306's seat query, straight from the phone: the JSON endpoint its own search page uses
@@ -325,37 +341,65 @@ actor TwelveOhSix {
         do { return try await t.value } catch { cache[key] = nil; throw error }
     }
 
-    private var gateCache: [String: Task<TrainDay, Error>] = [:]
+    private var runCache: [String: Task<[[String: Any]], Error>] = [:]
+    private var gateCache: [String: Task<String, Error>] = [:]
 
-    /// One train's run on one day (its code and origin date YYYYMMDD), from the stops 12306's WeChat mini-program shows
-    /// (mobile.12306.cn, no login): whether it runs (12306 lists stops), and 检票口 by station telecode (filled in for
-    /// trains running today; stations without one are left out). A failure is not cached, so a later look asks again.
-    func trainDay(code: String, start: String) async throws -> TrainDay {
+    /// A train's stops on one day (its code and origin date YYYYMMDD) as 12306's WeChat mini-program shows them
+    /// (mobile.12306.cn, no login): empty when it does not run that day; each stop's `wicket` (检票口) is filled in for
+    /// trains running today. A failure is not cached, so a later look asks again.
+    private func stops(code: String, start: String) async throws -> [[String: Any]] {
         let key = "\(code)|\(start)"
-        if let t = gateCache[key] { return try await t.value }
-        let t = Task { () -> TrainDay in
+        if let t = runCache[key] { return try await t.value }
+        let t = Task { () -> [[String: Any]] in
             var r = URLRequest(url: URL(string: "https://mobile.12306.cn/wxxcx/wechat/main/travelServiceQrcodeTrainInfo")!)
             r.httpMethod = "POST"
             r.setValue(Self.ua, forHTTPHeaderField: "User-Agent")
             r.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-            var form = URLComponents()
-            form.queryItems = [URLQueryItem(name: "trainCode", value: code), URLQueryItem(name: "startDay", value: start),
-                               URLQueryItem(name: "startTime", value: ""), URLQueryItem(name: "endDay", value: ""), URLQueryItem(name: "endTime", value: "")]
-            r.httpBody = form.percentEncodedQuery?.data(using: .utf8)
+            r.httpBody = Self.form(["trainCode": code, "startDay": start, "startTime": "", "endDay": "", "endTime": ""])
             let (data, _) = try await self.http.data(for: r)
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any], json["data"] != nil else {
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any], let d = json["data"] as? [String: Any] else {
                 throw PlanError.message("12306 没有回应")
             }
-            let stops = ((json["data"] as? [String: Any])?["trainDetail"] as? [String: Any])?["stopTime"] as? [[String: Any]] ?? []
-            var out: [String: String] = [:]
-            for s in stops {
-                let w = (s["wicket"] as? String ?? "").trimmingCharacters(in: .whitespaces)
-                if let c = s["stationTelecode"] as? String, !w.isEmpty, !w.allSatisfy({ $0 == "-" }) { out[c] = w }
+            return (d["trainDetail"] as? [String: Any])?["stopTime"] as? [[String: Any]] ?? []
+        }
+        runCache[key] = t
+        do { return try await t.value } catch { runCache[key] = nil; throw error }
+    }
+
+    /// Whether a train runs on a day (its code and origin date YYYYMMDD): 12306 lists its stops.
+    func runs(code: String, start: String) async throws -> Bool { !(try await stops(code: code, start: start)).isEmpty }
+
+    /// A train's 检票口 at a station on a date, as 12306 writes it: its own 检票口 query (www.12306.cn 信息查询 → 检票口;
+    /// the field is called trainPlatform but holds the 检票口, e.g. 检票口11B, known days ahead), else the stop's wicket in
+    /// the WeChat stops (smaller stations, trains running today); "" when neither has one.
+    func gate(code: String, date: String, station: String, start: String) async throws -> String {
+        let key = "\(code)|\(date)|\(station)"
+        if let t = gateCache[key] { return try await t.value }
+        let t = Task { () -> String in
+            var r = URLRequest(url: URL(string: "https://www.12306.cn/index/otn/index12306/queryTicketCheck")!)
+            r.httpMethod = "POST"
+            r.setValue(Self.ua, forHTTPHeaderField: "User-Agent")
+            r.setValue("https://www.12306.cn/index/view/infos/ticket_check.html", forHTTPHeaderField: "Referer")
+            r.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+            r.httpBody = Self.form(["trainDate": date, "station_train_code": code, "from_station_telecode": station])
+            let (data, _) = try await self.http.data(for: r)
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any], let d = json["data"] as? [String: Any] else {
+                throw PlanError.message("12306 没有回应")
             }
-            return TrainDay(runs: !stops.isEmpty, gates: out)
+            let g = (d["trainPlatform"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            if !g.isEmpty { return g }
+            let stop = try await self.stops(code: code, start: start).first { ($0["stationTelecode"] as? String) == station }
+            let w = (stop?["wicket"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            return w.isEmpty || w.allSatisfy({ $0 == "-" }) ? "" : w
         }
         gateCache[key] = t
         do { return try await t.value } catch { gateCache[key] = nil; throw error }
+    }
+
+    private static func form(_ fields: [String: String]) -> Data? {
+        var c = URLComponents()
+        c.queryItems = fields.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+        return c.percentEncodedQuery?.data(using: .utf8)
     }
 
     private func get(_ url: URL, _ headers: [String: String] = [:]) async throws -> (Data, HTTPURLResponse) {
@@ -451,22 +495,23 @@ func fixtureSeats(_ tt: Timetable, from: String, to: String, date: String) -> [S
     return out
 }
 
-/// `-fixture`: made-up 检票口 for a train's stops, the same each time: some stations have none, some several.
-func fixtureGates(_ tt: Timetable, code: String) -> [String: String] {
-    guard let t = tt.trains.first(where: { $0.code == code }) else { return [:] }
-    var out: [String: String] = [:]
-    for p in 0..<(t.stops.count / 3) {
-        let st = tt.stations[t.stops[p * 3]].code
-        let h = (code + st).unicodeScalars.reduce(7) { ($0 * 31 + Int($1.value)) % 1_000_003 }
-        switch h % 4 {
-        case 0: continue
-        case 1: out[st] = "\(h % 20 + 1)检票口"
-        case 2: out[st] = "\(h % 12 + 1)A、\(h % 12 + 2)A,\(h % 12 + 1)B、\(h % 12 + 2)B"
-        default: out[st] = "检票口\(h % 9 + 1),检票口\(h % 9 + 2)"
-        }
+/// `-fixture`: a made-up 检票口 for a train at a station, the same each time, in the forms 12306 writes; some none.
+func fixtureGate(code: String, station: String) -> String {
+    let h = (code + station).unicodeScalars.reduce(7) { ($0 * 31 + Int($1.value)) % 1_000_003 }
+    switch h % 4 {
+    case 0: return ""
+    case 1: return "检票口\(h % 20 + 1)"
+    case 2: return "检票口\(h % 12 + 1)B"
+    default: return "检票口\(h % 9 + 1)A、\(h % 9 + 1)B"
     }
-    return out
 }
+
+/// `-fixture`: short forms for some of the fixture's 检票口 strings, so the replica draws both kinds of gate line.
+let fixtureLabels: [String: [String: String]] = {
+    var out: [String: [String: String]] = [:]
+    for code in ["IOQ", "IFQ", "NZQ", "IZQ", "XJA"] { out[code] = Dictionary(uniqueKeysWithValues: (1...20).map { ("检票口\($0)A、\($0)B", "\($0)") }) }
+    return out
+}()
 
 /// The answer china-train's Worker gives for /api/query, so the reference page can be fed by the phone.
 func apiJSON(_ seats: [String: Seats]) -> Data {
