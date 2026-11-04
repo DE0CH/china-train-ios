@@ -27,8 +27,8 @@ class Tap: UIControl {
 // ---- header: `.top` ---------------------------------------------------------------------------------------------
 
 final class Header: UIView {
-    let title = TextView("火车路线规划", size: 28, weight: 800, lineHeight: 33.6)   // h1 1.75rem/800, line-height 1.2
-    let sub = TextView("", size: 14, color: .muted)                                  // .sub 0.875rem
+    let title = TextView("火车路线规划", size: 24, weight: 800, lineHeight: 28.8)   // h1 1.75rem/800, line-height 1.2
+    let sub = TextView("", size: 13, color: .muted)                                  // .sub 0.875rem
     init() {
         super.init(frame: .zero)
         addSubview(title)
@@ -40,7 +40,7 @@ final class Header: UIView {
     func set(generated: String?) {
         guard let g = generated, g.count >= 10 else { sub.isHidden = true; return }
         let md = g.dropFirst(5).prefix(5).replacingOccurrences(of: "-", with: "月")
-        sub.set([Run(text: "时刻表更新于 \(md)日，余票实时查询 12306", size: 14, color: .muted)])
+        sub.set([Run(text: "时刻表更新于 \(md)日，余票实时查询 12306", size: 13, color: .muted)])
         sub.isHidden = false
     }
 
@@ -73,7 +73,7 @@ final class StationSign: UIView {
 
     init(label text: String, start: Bool) {
         isStart = start
-        label = TextView(text, size: 14, color: .muted)
+        label = TextView(text, size: 13, color: .muted)
         super.init(frame: .zero)
         for v in [line, node, label, field, underline] as [UIView] { addSubview(v) }
         field.font = Fonts.font(.text, 32, 800) as UIFont   // .sign input 2rem/800 at phone width
@@ -91,7 +91,7 @@ final class StationSign: UIView {
 
     func placeholder(_ s: String) {
         // ::placeholder: muted, 600, 1.375rem
-        field.attributedPlaceholder = NSAttributedString(string: s, attributes: [.font: Fonts.font(.text, 22, 600) as UIFont, .foregroundColor: UIColor.muted])
+        field.attributedPlaceholder = NSAttributedString(string: s, attributes: [.font: Fonts.font(.text, 24, 600) as UIFont, .foregroundColor: UIColor.muted])
     }
 
     func focused(_ on: Bool) { underline.backgroundColor = on ? .focus : .clear }
@@ -143,7 +143,7 @@ final class SuggestList: UIView {
             let s = tt.stations[i], on = k == hi
             let row = Tap()
             row.backgroundColor = on ? .ink : .clear
-            let name = TextView(s.name, size: 17, weight: 700, color: on ? .panel : .ink)   // .s-name 1.0625rem/700
+            let name = TextView(s.name, size: 18, weight: 700, color: on ? .panel : .ink)   // .s-name 1.0625rem/700
             let meta = TextView(s.city != s.name ? s.city : "", .num, size: 15, color: on ? .panel : .muted)
             row.addSubview(name)
             row.addSubview(meta)
@@ -205,8 +205,8 @@ final class DayStrip: UIScrollView {
             let rel = i < 3 ? ["今天", "明天", "后天"][i] : "周\(week[c.weekday! - 1])"
             let cell = Tap()
             cell.backgroundColor = on ? .ink : .clear
-            let a = TextView(rel, size: 12, color: on ? .panel : .muted)                       // .day span 0.75rem
-            let b = TextView("\(c.month!).\(c.day!)", .num, size: 20, weight: 600, color: on ? .panel : .ink, lineHeight: 22)   // .day b 1.25rem/600, 1.1
+            let a = TextView(rel, size: 13, color: on ? .panel : .muted)                       // .day span 0.75rem
+            let b = TextView("\(c.month!).\(c.day!)", .num, size: 18, weight: 600, color: on ? .panel : .ink, lineHeight: 19.8)   // .day b 1.25rem/600, 1.1
             let rule = Box(.rule)
             for v in [a, b, rule] as [UIView] { cell.addSubview(v) }
             cell.accessibilityIdentifier = "day-\(iso)"
@@ -471,8 +471,8 @@ final class StatusBar: UIView {
         switch s {
         case .checking(let done, let total, let routes):
             checking = true
-            title = TextView("正在向 12306 核对余票", size: 16, weight: 700, color: .muted)
-            detail = TextView("\(routes) 个方案，已查 \(done)/\(total) 段，查完一并列出", size: 14, color: .muted)
+            title = TextView("正在向 12306 核对余票", size: 15, weight: 700, color: .muted)
+            detail = TextView("\(routes) 个方案，已查 \(done)/\(total) 段，查完一并列出", size: 13, color: .muted)
             let frame = Border(.ink, UIEdgeInsets(top: 1, left: 1, bottom: 1, right: 1)), fill = Box(.ink)
             frame.addSubview(fill)
             meter = (frame, fill, CGFloat(done) / CGFloat(max(total, 1)))
@@ -488,8 +488,8 @@ final class StatusBar: UIView {
             case .stale(let m, _): text = "余票是 \(m) 分钟前的"
             default: text = "余票已核对"
             }
-            title = TextView(text, size: 16, weight: 700)
-            detail = TextView("\(at) 查询 12306" + (failed > 0 ? "，相关方案标为查询失败" : ""), size: 14, color: .muted)
+            title = TextView(text, size: 15, weight: 700)
+            detail = TextView("\(at) 查询 12306" + (failed > 0 ? "，相关方案标为查询失败" : ""), size: 13, color: .muted)
             // .pip: 14px square, 2px ink; filled when fine, muted when stale, 20px dashed with a cross when failed
             let p: Border
             if failed > 0 {
@@ -634,12 +634,12 @@ final class RouteRow: UIView {
         case .stop(let name, let times, let note, let gate, let inLine, let outLine, let xchg):
             track = [line(inLine), line(outLine), Border(.ink, UIEdgeInsets(top: 4, left: 4, bottom: 4, right: 4), fill: .panel)]
             if xchg { track.append(Box(.ink)) }
-            if !name.isEmpty { content.append(TextView(name, size: 16, weight: 700, lineHeight: 21.6)) }   // .stop-name 1rem/700, 1.35
+            if !name.isEmpty { content.append(TextView(name, size: 18, weight: 700, lineHeight: 24.3)) }   // .stop-name 1rem/700, 1.35
             for (t, k) in times {
                 // .stop-time 0.875rem muted, its time in <b> 1.125rem/600 Archivo with 3px after
-                let strut = Run(text: "", size: 14, color: .muted)
+                let strut = Run(text: "", size: 13, color: .muted)
                 content.append(TextView(k.isEmpty ? [strut, Run(text: t, face: .num, size: 18, weight: 600, marginRight: 3)]
-                                                  : [strut, Run(text: t, face: .num, size: 18, weight: 600, marginRight: 3), Run(text: k, size: 14, color: .muted)]))
+                                                  : [strut, Run(text: t, face: .num, size: 18, weight: 600, marginRight: 3), Run(text: k, size: 13, color: .muted)]))
             }
             if let note { content.append(TextView(note, size: 13, color: .muted)) }   // .stop-note 0.8125rem, its own line
             // .stop-gate 0.8125rem muted, inline after the time; the gate in <b> 600 ink
@@ -673,12 +673,12 @@ final class RouteRow: UIView {
 
     /// .seats: plates "label | count", the count filled with ink when on sale; or one line of state.
     private func seatViews(_ s: LegState?) -> [UIView] {
-        guard let s else { return [TextView("正在查询余票", size: 14, color: .muted)] }
-        if s.departed || s.closed { return [TextView(s.departed ? "已发车" : "停止售票", size: 14, color: .muted)] }   // .seats.pending
+        guard let s else { return [TextView("正在查询余票", size: 13, color: .muted)] }
+        if s.departed || s.closed { return [TextView(s.departed ? "已发车" : "停止售票", size: 13, color: .muted)] }   // .seats.pending
         if s.error != nil || s.missing {
             let v = UIView()
             let x = IconView(Icon.cross, size: 16)
-            let t = TextView(s.error != nil ? "余票查询失败" : "当日不开行", size: 14, weight: 600)
+            let t = TextView(s.error != nil ? "余票查询失败" : "当日不开行", size: 13, weight: 600)
             v.addSubview(x)
             v.addSubview(t)
             x.frame = CGRect(x: 0, y: (t.height - 16) / 2, width: 16, height: 16)
@@ -690,17 +690,17 @@ final class RouteRow: UIView {
         var out: [UIView] = []
         if !seats.canBuy {
             let p = Border(.rule, UIEdgeInsets(top: 1, left: 1, bottom: 1, right: 1))
-            let t = TextView("暂不售票", size: 14, lineHeight: 22.4)
+            let t = TextView("暂不售票", size: 13, lineHeight: 20.8)
             p.addSubview(t)
             t.frame = CGRect(x: 1, y: 1, width: t.naturalWidth, height: t.height)
-            p.frame.size = CGSize(width: t.naturalWidth + 2, height: 25 + 2)
+            p.frame.size = CGSize(width: t.naturalWidth + 2, height: 24 + 2)
             out.append(p)
         }
         for (k, v) in [("商务", seats.sw), ("一等", seats.yd), ("二等", seats.ed), ("无座", seats.wz)] where v != "--" {
             let ok = v == "有" || (Int(v) != nil && !v.isEmpty)
             let p = Border(ok ? .ink : .rule, UIEdgeInsets(top: 1, left: 1, bottom: 1, right: 1))
-            let label = TextView(k, size: 14, color: ok ? .ink : .muted, lineHeight: 22.4)
-            let count = TextView(v, .num, size: 16, weight: ok ? 700 : 500, color: ok ? .panel : .muted, lineHeight: 25.6)
+            let label = TextView(k, size: 13, color: ok ? .ink : .muted, lineHeight: 20.8)
+            let count = TextView(v, .num, size: 15, weight: ok ? 700 : 500, color: ok ? .panel : .muted, lineHeight: 24)
             let cell = Box(ok ? .ink : .clear)
             p.addSubview(cell)
             p.addSubview(label)

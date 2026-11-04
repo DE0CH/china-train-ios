@@ -529,7 +529,7 @@ final class Screen: UIViewController, UITextFieldDelegate {
         seg.isUserInteractionEnabled = true
         seg.frame = CGRect(x: 0, y: 0, width: x + 2, height: 48)
         v.addSubview(seg)
-        let c = TextView("\(count) 个方案" + (hidden > 0 ? "，\(hidden) 个当日不开行已隐藏" : ""), size: 14, color: .muted)
+        let c = TextView("\(count) 个方案" + (hidden > 0 ? "，\(hidden) 个当日不开行已隐藏" : ""), size: 13, color: .muted)
         v.addSubview(c)
         return v
     }
@@ -541,14 +541,14 @@ final class Screen: UIViewController, UITextFieldDelegate {
             let sw = Box(.line(c))
             sw.frame.size = CGSize(width: 28, height: 6)
             v.addSubview(sw)
-            v.addSubview(TextView(className[c]!, size: 14, color: .muted))
+            v.addSubview(TextView(className[c]!, size: 13, color: .muted))
         }
         if visible.contains(where: { $0.transfers > 0 }) {
             let sw = Border(.muted, UIEdgeInsets(top: 3, left: 0, bottom: 0, right: 0))
             sw.dashed = true
             sw.frame.size = CGSize(width: 28, height: 3)
             v.addSubview(sw)
-            v.addSubview(TextView("换乘", size: 14, color: .muted))
+            v.addSubview(TextView("换乘", size: 13, color: .muted))
         }
         return v
     }

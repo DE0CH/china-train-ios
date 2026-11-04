@@ -78,7 +78,7 @@ enum Fonts {
 struct Run {
     var text: String
     var face: Face = .text
-    var size: CGFloat = 16
+    var size: CGFloat = 15   // the body (the page's type scale: 13 / 15 / 18 / 24 / 32)
     var weight = 400
     var color: UIColor = .ink
     var lineHeight: CGFloat? = nil   // nil: 1.5 × size, the body's
@@ -134,7 +134,7 @@ final class TextView: UIView {
         set(runs)
     }
 
-    convenience init(_ text: String, _ face: Face = .text, size: CGFloat = 16, weight: Int = 400, color: UIColor = .ink, lineHeight: CGFloat? = nil) {
+    convenience init(_ text: String, _ face: Face = .text, size: CGFloat = 15, weight: Int = 400, color: UIColor = .ink, lineHeight: CGFloat? = nil) {
         self.init([Run(text: text, face: face, size: size, weight: weight, color: color, lineHeight: lineHeight)])
     }
 
