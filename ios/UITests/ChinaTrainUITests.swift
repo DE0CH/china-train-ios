@@ -130,7 +130,8 @@ final class ChinaTrainUITests: XCTestCase {
             return (String(t.trimmingCharacters(in: .whitespaces).prefix(16)), y)
         }
         // the route rows only (where the two can drift apart line by line); WebKit's span boxes are their line boxes
-        let rowParts = ["span.stop-name", "span.train", "span.stop-gate", "span.leg-to", "span.leg-dur", "span.stop-note", "span.walk-text"]
+        // (not .train: WebKit's box there includes the badge's padding, the native line box does not)
+        let rowParts = ["span.stop-name", "span.stop-gate", "span.leg-to", "span.leg-dur", "span.stop-note", "span.walk-text"]
         let html = items(dumps["html"]).compactMap { i -> (String, Double)? in
             guard i.count > 3, let c = i[0] as? String, rowParts.contains(c), let t = i[1] as? String, let y = (i[3] as? NSNumber)?.doubleValue, !t.isEmpty
             else { return nil }
@@ -138,12 +139,19 @@ final class ChinaTrainUITests: XCTestCase {
         }.sorted { $0.1 < $1.1 }
         let firstRow = html.first?.1 ?? 0
         native = native.filter { $0.1 >= firstRow - 40 }
+        let nativeAll = native
         var reported = 0
-        for (t, y) in html where reported < 5 {
+        // the texts around a spot, both ways, so one log line shows what is missing or extra
+        func around(_ y: Double) {
+            let p = html.filter { abs($0.1 - y) < 90 }.map { "\($0.0)@\(Int($0.1))" }.joined(separator: ", ")
+            let n = nativeAll.filter { abs($0.1 - y) < 90 }.map { "\($0.0)@\(Int($0.1))" }.joined(separator: ", ")
+            print("GEOMDIFF near y \(Int(y)) page: \(p) || native: \(n)")
+        }
+        for (t, y) in html where reported < 3 {
             guard let k = native.indices.filter({ native[$0].0 == t }).min(by: { abs(native[$0].1 - y) < abs(native[$1].1 - y) }) else {
-                print("GEOMDIFF only in the page: \(t) at y \(Int(y))"); reported += 1; continue
+                print("GEOMDIFF only in the page: \(t) at y \(Int(y))"); if reported == 0 { around(y) }; reported += 1; continue
             }
-            if abs(native[k].1 - y) > 2 { print("GEOMDIFF \(t): page y \(Int(y)), native y \(Int(native[k].1))"); reported += 1 }
+            if abs(native[k].1 - y) > 2 { print("GEOMDIFF \(t): page y \(Int(y)), native y \(Int(native[k].1))"); if reported == 0 { around(y) }; reported += 1 }
             native.remove(at: k)
         }
         if reported == 0 { print("GEOMDIFF none: \(html.count) row texts at the same heights") }
