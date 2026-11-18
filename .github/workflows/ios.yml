@@ -10,8 +10,7 @@ on:
     inputs:
       upload: { description: "Upload to TestFlight", type: boolean, default: true }
       appearance: { description: "Simulator appearance", type: choice, options: [light, dark], default: light }
-  push:
-    branches: [main]
+  push:  # every branch (the gate merges a branch when this is green); main alone uploads
 permissions: { contents: read }
 defaults:
   run:
@@ -37,7 +36,7 @@ jobs:
   build:
     needs: planner
     runs-on: macos-26
-    concurrency: { group: "ios-${{ inputs.appearance || 'light' }}", cancel-in-progress: false }
+    concurrency: { group: "ios-${{ github.ref }}-${{ inputs.appearance || 'light' }}", cancel-in-progress: false }
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -125,7 +124,7 @@ jobs:
             ${{ runner.temp }}/test.log
           if-no-files-found: ignore
       - name: Archive (unsigned)
-        if: inputs.upload || (github.event_name == 'push' && github.workflow == 'ios')
+        if: inputs.upload || (github.event_name == 'push' && github.workflow == 'ios' && github.ref == 'refs/heads/main')
         run: |
           xcodebuild archive -project ChinaTrain.xcodeproj -scheme ChinaTrain -configuration Release -destination 'generic/platform=iOS' \
             -derivedDataPath DerivedData -archivePath "$RUNNER_TEMP/app.xcarchive" \
@@ -133,7 +132,7 @@ jobs:
           grep -E "error:|\*\* ARCHIVE" "$RUNNER_TEMP/archive.log" | head -40 || true
           grep -q "ARCHIVE SUCCEEDED" "$RUNNER_TEMP/archive.log"
       - name: Export, cloud-sign and upload to TestFlight
-        if: inputs.upload || (github.event_name == 'push' && github.workflow == 'ios')
+        if: inputs.upload || (github.event_name == 'push' && github.workflow == 'ios' && github.ref == 'refs/heads/main')
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
